@@ -583,7 +583,7 @@ class CommandShortcutModel(BaseModel):
 class ClientConfigMap(BaseClientModel):
     instance_id: str = Field(default=generate_client_id())
     log_level: str = Field(default="INFO")
-    debug_console: bool = Field(default=False)
+    debug_console: bool = Field(default=True)
     strategy_report_interval: float = Field(default=900)
     logger_override_whitelist: List = Field(
         default=["hummingbot.strategy.arbitrage", "hummingbot.strategy.cross_exchange_market_making", "conf"]
