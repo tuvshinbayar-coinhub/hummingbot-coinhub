@@ -2,10 +2,7 @@ from typing import Dict, Optional
 
 from hummingbot.core.data_type.common import TradeType
 from hummingbot.core.data_type.order_book import OrderBook
-from hummingbot.core.data_type.order_book_message import (
-    OrderBookMessage,
-    OrderBookMessageType
-)
+from hummingbot.core.data_type.order_book_message import OrderBookMessage, OrderBookMessageType
 
 
 class CoinhubOrderBook(OrderBook):
@@ -26,7 +23,7 @@ class CoinhubOrderBook(OrderBook):
             msg.update(metadata)
         return OrderBookMessage(OrderBookMessageType.SNAPSHOT, {
             "trading_pair": msg["trading_pair"],
-            "update_id": msg["lastUpdateId"],
+            "update_id": timestamp,
             "bids": msg["bids"],
             "asks": msg["asks"]
         }, timestamp=timestamp)

@@ -222,6 +222,7 @@ cdef class StrategyBase(TimeIterator):
         try:
             for market_trading_pair_tuple in market_trading_pair_tuples:
                 market, trading_pair, base_asset, quote_asset = market_trading_pair_tuple
+                self.logger().info(f"{trading_pair} on {market}")
                 bid_price = market.get_price(trading_pair, False)
                 ask_price = market.get_price(trading_pair, True)
                 mid_price = (bid_price + ask_price)/2

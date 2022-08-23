@@ -17,15 +17,15 @@ from hummingbot.connector.exchange_py_base import ExchangePyBase
 from hummingbot.connector.trading_rule import TradingRule
 from hummingbot.connector.utils import TradeFillOrderDetails, combine_to_hb_trading_pair
 from hummingbot.core.data_type.common import OrderType, TradeType
-from hummingbot.core.data_type.in_flight_order import InFlightOrder, OrderUpdate, TradeUpdate
+from hummingbot.core.data_type.in_flight_order import InFlightOrder, OrderState, OrderUpdate, TradeUpdate
 from hummingbot.core.data_type.order_book_tracker_data_source import OrderBookTrackerDataSource
 from hummingbot.core.data_type.trade_fee import DeductedFromReturnsTradeFee, TokenAmount, TradeFeeBase
 from hummingbot.core.data_type.user_stream_tracker_data_source import UserStreamTrackerDataSource
 from hummingbot.core.event.events import MarketEvent, OrderFilledEvent
+from hummingbot.core.network_iterator import NetworkStatus
 from hummingbot.core.utils.async_utils import safe_gather
 from hummingbot.core.web_assistant.connections.data_types import RESTMethod
 from hummingbot.core.web_assistant.web_assistants_factory import WebAssistantsFactory
-from hummingbot.core.network_iterator import NetworkStatus
 
 if TYPE_CHECKING:
     from hummingbot.client.config.config_helpers import ClientConfigAdapter
@@ -99,8 +99,6 @@ class CoinhubExchange(ExchangePyBase):
     def check_network_request_path(self):
         return CONSTANTS.PING_PATH_URL
 
-    
-
     @property
     def trading_pairs(self):
         return self._trading_pairs
@@ -115,7 +113,7 @@ class CoinhubExchange(ExchangePyBase):
 
     async def _api_request(self,
                            path_url,
-                           section: str = CONSTANTS.DEFAULT_SECTION,
+                           endpoint: str = CONSTANTS.DEFAULT_ENDPOINT,
                            method: RESTMethod = RESTMethod.GET,
                            params: Optional[Dict[str, Any]] = None,
                            data: Optional[Dict[str, Any]] = None,
@@ -125,9 +123,9 @@ class CoinhubExchange(ExchangePyBase):
 
         rest_assistant = await self._web_assistants_factory.get_rest_assistant()
         if is_auth_required:
-            url = self.web_utils.private_rest_url(path_url, section=section, domain=self.domain)
+            url = self.web_utils.private_rest_url(path_url, endpoint=endpoint, domain=self.domain)
         else:
-            url = self.web_utils.public_rest_url(path_url, section=section, domain=self.domain)
+            url = self.web_utils.public_rest_url(path_url, endpoint=endpoint, domain=self.domain)
 
         return await rest_assistant.execute_request(
             url=url,
@@ -144,7 +142,7 @@ class CoinhubExchange(ExchangePyBase):
         Checks connectivity with the exchange using the API
         """
         try:
-            await self._api_get(path_url=self.check_network_request_path, section=CONSTANTS.PUBLIC_API_SECTION)
+            await self._api_get(path_url=self.check_network_request_path, endpoint=CONSTANTS.PUBLIC_API_ENDPOINT)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -201,35 +199,31 @@ class CoinhubExchange(ExchangePyBase):
         order_result = None
         amount_str = f"{amount:f}"
         price_str = f"{price:f}"
-        type_str = CoinhubExchange.coinhub_order_type(order_type)
-        side_str = CONSTANTS.SIDE_BUY if trade_type is TradeType.BUY else CONSTANTS.SIDE_SELL
+        side = CONSTANTS.SIDE_BUY if trade_type is TradeType.BUY else CONSTANTS.SIDE_SELL
         symbol = await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair)
         api_params = {
-            "symbol": symbol,
-            "side": side_str,
-            "quantity": amount_str,
-            "type": type_str,
-            "newClientOrderId": order_id,
+            "market": symbol,
+            "amount": amount_str,
             "price": price_str,
+            "side": side,
+            "client_id": CONSTANTS.API_CLIENT_ID,
         }
-        if order_type == OrderType.LIMIT:
-            api_params["timeInForce"] = CONSTANTS.TIME_IN_FORCE_GTC
 
         order_result = await self._api_post(path_url=CONSTANTS.ORDER_PATH_URL, data=api_params, is_auth_required=True)
-        o_id = str(order_result["orderId"])
-        transact_time = order_result["transactTime"] * 1e-3
+        o_id = str(order_result["id"])
+        transact_time = order_result["mtime"] * 1e-3
         return (o_id, transact_time)
 
     async def _place_cancel(self, order_id: str, tracked_order: InFlightOrder):
         symbol = await self.exchange_symbol_associated_to_pair(trading_pair=tracked_order.trading_pair)
         api_params = {
-            "symbol": symbol,
-            "origClientOrderId": order_id,
+            "market": symbol,
+            "order_id": order_id,
         }
-        cancel_result = await self._api_delete(
-            path_url=CONSTANTS.ORDER_PATH_URL, params=api_params, is_auth_required=True
+        cancel_result = await self._api_post(
+            path_url=CONSTANTS.ORDER_CANCEL_PATH_URL, data=api_params, is_auth_required=True
         )
-        if cancel_result.get("status") == "CANCELED":
+        if cancel_result["data"].get("status") == "done":
             return True
         return False
 
@@ -237,56 +231,77 @@ class CoinhubExchange(ExchangePyBase):
         """
         Example:
         {
-            "symbol": "ETHBTC",
-            "baseAssetPrecision": 8,
-            "quotePrecision": 8,
-            "orderTypes": ["LIMIT", "MARKET"],
-            "filters": [
+            "code": 200,
+            "message": "success",
+            "data": [
                 {
-                    "filterType": "PRICE_FILTER",
-                    "minPrice": "0.00000100",
-                    "maxPrice": "100000.00000000",
-                    "tickSize": "0.00000100"
-                }, {
-                    "filterType": "LOT_SIZE",
-                    "minQty": "0.00100000",
-                    "maxQty": "100000.00000000",
-                    "stepSize": "0.00100000"
-                }, {
-                    "filterType": "MIN_NOTIONAL",
-                    "minNotional": "0.00100000"
+                    "market": "CHB/MNT",
+                    "money": "MNT",
+                    "stock": "CHB",
+                    "moneyPrec": 4,
+                    "stockPrec": 4,
+                    "feePrec": 4,
+                    "minAmount": 1,
+                    "type": 1,
+                    "canTrade": true
+                },
+                {
+                    "market": "WPL/MNT",
+                    "money": "MNT",
+                    "stock": "WPL",
+                    "moneyPrec": 5,
+                    "stockPrec": 1,
+                    "feePrec": 4,
+                    "minAmount": 500,
+                    "type": 1,
+                    "canTrade": true
                 }
             ]
         }
         """
-        trading_pair_rules = exchange_info_dict.get("symbols", [])
+        trading_pair_rules = exchange_info_dict.get("data", [])
         retval = []
         for rule in filter(coinhub_utils.is_exchange_information_valid, trading_pair_rules):
             try:
-                trading_pair = await self.trading_pair_associated_to_exchange_symbol(symbol=rule.get("symbol"))
-                filters = rule.get("filters")
-                price_filter = [f for f in filters if f.get("filterType") == "PRICE_FILTER"][0]
-                lot_size_filter = [f for f in filters if f.get("filterType") == "LOT_SIZE"][0]
-                min_notional_filter = [f for f in filters if f.get("filterType") == "MIN_NOTIONAL"][0]
+                trading_pair = await self.trading_pair_associated_to_exchange_symbol(symbol=rule.get("market"))
 
-                min_order_size = Decimal(lot_size_filter.get("minQty"))
-                tick_size = price_filter.get("tickSize")
-                step_size = Decimal(lot_size_filter.get("stepSize"))
-                min_notional = Decimal(min_notional_filter.get("minNotional"))
+                min_order_size = Decimal(rule.get("minAmount"))
+                min_amount_inc = Decimal(f"1e-{rule['stockPrec']}")
+                min_price_inc = Decimal(f"1e-{rule['moneyPrec']}")
 
                 retval.append(
                     TradingRule(
                         trading_pair,
                         min_order_size=min_order_size,
-                        min_price_increment=Decimal(tick_size),
-                        min_base_amount_increment=Decimal(step_size),
-                        min_notional_size=Decimal(min_notional),
+                        min_price_increment=min_price_inc,
+                        min_base_amount_increment=min_amount_inc,
                     )
                 )
 
             except Exception:
                 self.logger().exception(f"Error parsing the trading pair rule {rule}. Skipping.")
         return retval
+
+    async def _status_polling_loop(self):
+        while True:
+            try:
+                self._poll_notifier = asyncio.Event()
+                await self._poll_notifier.wait()
+
+                await safe_gather(
+                    self._update_balances(),
+                    self._update_order_status(),
+                )
+                self._last_poll_timestamp = self.current_timestamp
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                print(e)
+                self.logger().network("Unexpected error while polling updates.",
+                                      exc_info=True,
+                                      app_warning_msg="Could not fetch updates from Coinhub-Sandbox. "
+                                                      "Check API key and network connection.")
+                await asyncio.sleep(5.0)
 
     async def _status_polling_loop_fetch_updates(self):
         await self._update_order_fills_from_trades()
@@ -381,7 +396,7 @@ class CoinhubExchange(ExchangePyBase):
         if long_interval_current_tick > long_interval_last_tick or (
             self.in_flight_orders and small_interval_current_tick > small_interval_last_tick
         ):
-            query_time = int(self._last_trades_poll_coinhub_timestamp * 1e3)
+            # query_time = int(self._last_trades_poll_coinhub_timestamp * 1e3)
             self._last_trades_poll_coinhub_timestamp = self._time_synchronizer.time()
             order_by_exchange_id_map = {}
             for order in self._order_tracker.all_orders.values():
@@ -390,33 +405,33 @@ class CoinhubExchange(ExchangePyBase):
             tasks = []
             trading_pairs = self.trading_pairs
             for trading_pair in trading_pairs:
-                params = {"symbol": await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair)}
-                if self._last_poll_timestamp > 0:
-                    params["startTime"] = query_time
-                tasks.append(self._api_get(path_url=CONSTANTS.MY_TRADES_PATH_URL, params=params, is_auth_required=True))
+                params = {"market": await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair), "limit": 100, "offset": 0}
+                # if self._last_poll_timestamp > 0:
+                #     params["startTime"] = query_time
+                tasks.append(self._api_post(path_url=CONSTANTS.MY_TRADES_PATH_URL, data=params, is_auth_required=True))
 
             self.logger().debug(f"Polling for order fills of {len(tasks)} trading pairs.")
             results = await safe_gather(*tasks, return_exceptions=True)
 
             for trades, trading_pair in zip(results, trading_pairs):
-
+                symbol = (await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair))
                 if isinstance(trades, Exception):
                     self.logger().network(
                         f"Error fetching trades update for the order {trading_pair}: {trades}.",
                         app_warning_msg=f"Failed to fetch trade update for {trading_pair}.",
                     )
                     continue
-                for trade in trades:
-                    exchange_order_id = str(trade["orderId"])
+                for trade in trades["data"]["records"]:
+                    exchange_order_id = str(trade["id"])
                     if exchange_order_id in order_by_exchange_id_map:
                         # This is a fill for a tracked order
                         tracked_order = order_by_exchange_id_map[exchange_order_id]
                         fee = TradeFeeBase.new_spot_fee(
                             fee_schema=self.trade_fee_schema(),
                             trade_type=tracked_order.trade_type,
-                            percent_token=trade["commissionAsset"],
+                            percent_token=symbol.split("/")[0] if trade["side"] == 2 else symbol.split("/")[1],
                             flat_fees=[
-                                TokenAmount(amount=Decimal(trade["commission"]), token=trade["commissionAsset"])
+                                TokenAmount(amount=Decimal(trade["deal_fee"]), token=symbol.split("/")[0] if trade["side"] == 2 else symbol.split("/")[1])
                             ],
                         )
                         trade_update = TradeUpdate(
@@ -425,10 +440,10 @@ class CoinhubExchange(ExchangePyBase):
                             exchange_order_id=exchange_order_id,
                             trading_pair=trading_pair,
                             fee=fee,
-                            fill_base_amount=Decimal(trade["qty"]),
-                            fill_quote_amount=Decimal(trade["quoteQty"]),
+                            fill_base_amount=Decimal(trade["deal_stock"]),
+                            fill_quote_amount=Decimal(trade["deal_money"]),
                             fill_price=Decimal(trade["price"]),
-                            fill_timestamp=trade["time"] * 1e-3,
+                            fill_timestamp=trade["ftime"] * 1e-3,
                         )
                         self._order_tracker.process_trade_update(trade_update)
                     elif self.is_confirmed_new_order_filled_event(str(trade["id"]), exchange_order_id, trading_pair):
@@ -442,14 +457,14 @@ class CoinhubExchange(ExchangePyBase):
                             MarketEvent.OrderFilled,
                             OrderFilledEvent(
                                 timestamp=float(trade["time"]) * 1e-3,
-                                order_id=self._exchange_order_ids.get(str(trade["orderId"]), None),
+                                order_id=self._exchange_order_ids.get(str(trade["id"]), None),
                                 trading_pair=trading_pair,
-                                trade_type=TradeType.BUY if trade["isBuyer"] else TradeType.SELL,
-                                order_type=OrderType.LIMIT_MAKER if trade["isMaker"] else OrderType.LIMIT,
+                                trade_type=TradeType.BUY if trade["side"] == 2 else TradeType.SELL,
+                                order_type=OrderType.LIMIT,
                                 price=Decimal(trade["price"]),
-                                amount=Decimal(trade["qty"]),
+                                amount=Decimal(trade["deal_stock"]),
                                 trade_fee=DeductedFromReturnsTradeFee(
-                                    flat_fees=[TokenAmount(trade["commissionAsset"], Decimal(trade["commission"]))]
+                                    flat_fees=[TokenAmount(symbol.split("/")[0] if trade["side"] == 2 else symbol.split("/")[1], Decimal(trade["deal_fee"]))]
                                 ),
                                 exchange_trade_id=str(trade["id"]),
                             ),
@@ -467,11 +482,11 @@ class CoinhubExchange(ExchangePyBase):
         if current_tick > last_tick and len(tracked_orders) > 0:
 
             tasks = [
-                self._api_get(
-                    path_url=CONSTANTS.ORDER_PATH_URL,
-                    params={
-                        "symbol": await self.exchange_symbol_associated_to_pair(trading_pair=o.trading_pair),
-                        "origClientOrderId": o.client_order_id,
+                self._api_post(
+                    path_url=CONSTANTS.GET_ORDER_PATH_URL,
+                    data={
+                        "market": await self.exchange_symbol_associated_to_pair(trading_pair=o.trading_pair),
+                        "order_id": o.client_order_id,
                     },
                     is_auth_required=True,
                 )
@@ -497,13 +512,19 @@ class CoinhubExchange(ExchangePyBase):
 
                 else:
                     # Update order execution status
-                    new_state = CONSTANTS.ORDER_STATE[order_update["status"]]
+                    if "data" in order_update:
+                        if "data" in order_update["data"] and order_update["data"] is not None:
+                            new_state = CONSTANTS.ORDER_STATE[order_update["data"]["status"]]
+                        else:
+                            new_state = OrderState.CANCELED
+                    else:
+                        new_state = OrderState.FAILED
 
                     update = OrderUpdate(
                         client_order_id=client_order_id,
-                        exchange_order_id=str(order_update["orderId"]),
+                        exchange_order_id=client_order_id if new_state == OrderState.CANCELED else str(order_update["id"]),
                         trading_pair=tracked_order.trading_pair,
-                        update_timestamp=order_update["updateTime"] * 1e-3,
+                        update_timestamp=order_update["ftime"] * 1e-3,
                         new_state=new_state,
                     )
                     self._order_tracker.process_order_update(update)
@@ -541,5 +562,5 @@ class CoinhubExchange(ExchangePyBase):
             method=RESTMethod.GET, path_url=CONSTANTS.TICKER_PRICE_CHANGE_PATH_URL
         )
         symbol = await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair)
-        
+
         return float(resp_json["data"][symbol]["close"])

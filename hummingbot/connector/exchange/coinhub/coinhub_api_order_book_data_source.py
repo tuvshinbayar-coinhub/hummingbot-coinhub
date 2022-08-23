@@ -50,24 +50,18 @@ class CoinhubAPIOrderBookDataSource(OrderBookTrackerDataSource):
         """
         params = {
             "market": await self._connector.exchange_symbol_associated_to_pair(trading_pair=trading_pair),
-            "limit": 100,
-            "interval": 0.001,
+            "limit": "100",
+            "interval": "0.001",
         }
-
-        print("### params")
-        print(params)
 
         rest_assistant = await self._api_factory.get_rest_assistant()
         data = await rest_assistant.execute_request(
-            url=web_utils.public_rest_url(path_url=CONSTANTS.SNAPSHOT_PATH_URL, section=CONSTANTS.PUBLIC_API_SECTION, domain=self._domain),
+            url=web_utils.public_rest_url(path_url=CONSTANTS.SNAPSHOT_PATH_URL, endpoint=CONSTANTS.PUBLIC_API_ENDPOINT, domain=self._domain),
             params=params,
             method=RESTMethod.GET,
-            # throttler_limit_id=CONSTANTS.SNAPSHOT_PATH_URL,
+            throttler_limit_id=CONSTANTS.SNAPSHOT_PATH_URL,
         )
-        print("### data")
-        print(data)
-
-        return data
+        return data["data"]
 
     async def _subscribe_channels(self, ws: WSAssistant):
         """
@@ -110,7 +104,7 @@ class CoinhubAPIOrderBookDataSource(OrderBookTrackerDataSource):
 
     async def _connected_websocket_assistant(self) -> WSAssistant:
         ws: WSAssistant = await self._api_factory.get_ws_assistant()
-        await ws.connect(ws_url=CONSTANTS.WSS_URL.format(section=CONSTANTS.DEFAULT_SECTION, domain=self._domain),
+        await ws.connect(ws_url=CONSTANTS.WSS_URL.format(endpoint=CONSTANTS.DEFAULT_ENDPOINT, domain=self._domain),
                          ping_timeout=CONSTANTS.WS_HEARTBEAT_TIME_INTERVAL)
         return ws
 

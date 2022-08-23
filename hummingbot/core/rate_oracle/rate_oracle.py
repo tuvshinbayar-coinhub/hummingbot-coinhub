@@ -29,6 +29,7 @@ class RateOracleSource(Enum):
     coingecko = 1
     kucoin = 2
     ascend_ex = 3
+    coinhub = 4
 
 
 class RateOracle(NetworkBase):
@@ -54,6 +55,7 @@ class RateOracle(NetworkBase):
     coingecko_supported_vs_tokens_url = "https://api.coingecko.com/api/v3/simple/supported_vs_currencies"
     kucoin_price_url = "https://api.kucoin.com/api/v1/market/allTickers"
     ascend_ex_price_url = "https://ascendex.com/api/pro/v1/ticker"
+    coinhub_fiat_url = "https://sandbox-api.coinhub.mn/v1/fiats?channel=coinhub-sandbox"
 
     coingecko_token_categories = [
         "cryptocurrency",
@@ -206,6 +208,8 @@ class RateOracle(NetworkBase):
             return await cls.get_kucoin_prices()
         elif cls.source == RateOracleSource.ascend_ex:
             return await cls.get_ascend_ex_prices()
+        elif cls.source == RateOracleSource.coinhub:
+            return await cls.get_coinhub_prices()
         else:
             raise NotImplementedError
 
@@ -263,7 +267,7 @@ class RateOracle(NetworkBase):
                         and Decimal(record["askPrice"])):
                     results[trading_pair] = ((Decimal(record["bidPrice"]) + Decimal(record["askPrice"]))
                                              / Decimal("2"))
-
+        print(results)
         return results
 
     @classmethod
@@ -304,6 +308,18 @@ class RateOracle(NetworkBase):
                 if Decimal(record["ask"][0]) > 0 and Decimal(record["bid"][0]) > 0:
                     results[pair] = (Decimal(str(record["ask"][0])) + Decimal(str(record["bid"][0]))) / Decimal("2")
         return results
+
+    # @classmethod
+    # @async_ttl_cache(ttl=30, maxsize=1)
+    # async def get_coinhub_prices(cls) -> Dict[str, Decimal]:
+    #     result = {}
+    #     client = await cls._http_client()
+    #     async with client.request("GET", cls.coinhub_fiat_url) as resp:
+    #         records = await resp.json(content_type=None)
+    #         # pair = await CoinhubAPIOrderBookDataSource.trading_pair_associated_to_exchange_symbol(record["symbol"])
+    #         # for record in records["data"]:
+    #         #     if Decimal(record["ask"][0]) > 0 and Decimal(record["bid"][0]) > 0:
+        # return result
 
     @classmethod
     @async_ttl_cache(ttl=30, maxsize=1)

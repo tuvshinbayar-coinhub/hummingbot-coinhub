@@ -6,12 +6,16 @@ DEFAULT_DOMAIN = "mn"
 HBOT_ORDER_ID_PREFIX = "x-XEKWYICX"
 MAX_ORDER_ID_LEN = 32
 
-DEFAULT_SECTION = "sandbox-exchange"
-PUBLIC_API_SECTION = "sandbox-api"
+API_CLIENT_ID = "686042aac1c14927b39c"
+
+PRIVATE_EXCHANGE_ENDPOINT = "sandbox-exchange"
+PUBLIC_API_ENDPOINT = "sandbox-api"
+
+DEFAULT_ENDPOINT = PRIVATE_EXCHANGE_ENDPOINT
 
 # Base URL
-REST_URL = "https://{section}.coinhub.{domain}/"
-WSS_URL = "wss://{section}.coinhub.{domain}/ws/"
+REST_URL = "https://{endpoint}.coinhub.{domain}/"
+WSS_URL = "wss://{endpoint}.coinhub.{domain}/ws/"
 
 PUBLIC_API_VERSION = "v1"
 PRIVATE_API_VERSION = "v1"
@@ -26,16 +30,19 @@ SERVER_TIME_PATH_URL = "/time"
 # Private API endpoints or BinanceClient function
 WS_SIGN_PATH_URL = "/api/sign"
 ACCOUNTS_PATH_URL = "/api/balance/query"
-MY_TRADES_PATH_URL = "/myTrades"
-ORDER_PATH_URL = "/order"
+MY_TRADES_PATH_URL = "/api/order/user_deals"
+ORDER_PATH_URL = "/api/order/create"
+ORDER_CANCEL_PATH_URL = "/api/order/cancel"
+GET_ORDER_PATH_URL = "/api/order/detail"
+
 COINHUB_USER_STREAM_PATH_URL = "/userDataStream"
 
 WS_HEARTBEAT_TIME_INTERVAL = 30
 
 # Binance params
 
-SIDE_BUY = "BUY"
-SIDE_SELL = "SELL"
+SIDE_BUY = 2
+SIDE_SELL = 1
 
 TIME_IN_FORCE_GTC = "GTC"  # Good till cancelled
 TIME_IN_FORCE_IOC = "IOC"  # Immediate or cancel
@@ -55,14 +62,9 @@ MAX_REQUEST = 5000
 
 # Order States
 ORDER_STATE = {
-    "PENDING": OrderState.PENDING_CREATE,
-    "NEW": OrderState.OPEN,
-    "FILLED": OrderState.FILLED,
-    "PARTIALLY_FILLED": OrderState.PARTIALLY_FILLED,
-    "PENDING_CANCEL": OrderState.OPEN,
-    "CANCELED": OrderState.CANCELED,
-    "REJECTED": OrderState.FAILED,
-    "EXPIRED": OrderState.FAILED,
+    "opened": OrderState.OPEN,
+    "done": OrderState.FILLED,
+    "partially_filled": OrderState.PARTIALLY_FILLED,
 }
 
 # Websocket event types
@@ -124,7 +126,7 @@ RATE_LIMITS = [
         linked_limits=[LinkedLimitWeightPair(REQUEST_WEIGHT, 10)],
     ),
     RateLimit(
-        limit_id=ORDER_PATH_URL,
+        limit_id=GET_ORDER_PATH_URL,
         limit=MAX_REQUEST,
         time_interval=ONE_MINUTE,
         linked_limits=[
