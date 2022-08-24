@@ -1,12 +1,12 @@
-import time
 import hashlib
 import hmac
 import json
-from urllib.parse import urlparse, urlencode
+import time
+from urllib.parse import urlencode, urlparse
 
+from hummingbot.connector.exchange.coinhub import coinhub_constants as CONSTANTS
 from hummingbot.core.web_assistant.auth import AuthBase
 from hummingbot.core.web_assistant.connections.data_types import RESTMethod, RESTRequest, WSJSONRequest
-from hummingbot.connector.exchange.coinhub import coinhub_constants as CONSTANTS
 
 
 class CoinhubAuth(AuthBase):
@@ -43,11 +43,13 @@ class CoinhubAuth(AuthBase):
     async def ws_authenticate(self, request: WSJSONRequest) -> WSJSONRequest:
         access_id: str = self.api_key
         tonce = int(1000 * time.time())
-        content_to_sign = f"{tonce}{RESTMethod.POST}{CONSTANTS.WS_SIGN_PATH_URL}".encode()
-        signature = hmac.new(self.secret_key.encode("utf8"), msg=content_to_sign, digestmod=hashlib.sha256).hexdigest()
+        content_to_sign = f"{tonce}{RESTMethod.POST}{CONSTANTS.WS_SIGN_PATH_URL}"
+        content_to_sign += "{}"
+        signature = hmac.new(
+            self.secret_key.encode("utf8"), msg=content_to_sign.encode("utf8"), digestmod=hashlib.sha256
+        ).hexdigest()
 
-        subscribe = {"id": "111111", "method": "server.sign", "params": [access_id, signature, tonce]}
+        subscribe = {"id": 111111, "method": "server.sign", "params": [access_id, signature, tonce]}
 
         request.payload.update(subscribe)
-
         return request

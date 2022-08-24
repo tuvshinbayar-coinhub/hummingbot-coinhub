@@ -24,8 +24,8 @@ class CoinhubOrderBook(OrderBook):
         return OrderBookMessage(OrderBookMessageType.SNAPSHOT, {
             "trading_pair": msg["trading_pair"],
             "update_id": timestamp,
-            "bids": msg["bids"],
-            "asks": msg["asks"]
+            "bids": msg.get("bids", []),
+            "asks": msg.get("asks", [])
         }, timestamp=timestamp)
 
     @classmethod
@@ -44,10 +44,9 @@ class CoinhubOrderBook(OrderBook):
             msg.update(metadata)
         return OrderBookMessage(OrderBookMessageType.DIFF, {
             "trading_pair": msg["trading_pair"],
-            "first_update_id": msg["U"],
-            "update_id": msg["u"],
-            "bids": msg["b"],
-            "asks": msg["a"]
+            "update_id": timestamp,
+            "bids": msg.get("bids", []),
+            "asks": msg.get("asks", [])
         }, timestamp=timestamp)
 
     @classmethod
@@ -60,12 +59,12 @@ class CoinhubOrderBook(OrderBook):
         """
         if metadata:
             msg.update(metadata)
-        ts = msg["E"]
+        ts = msg["time"]
         return OrderBookMessage(OrderBookMessageType.TRADE, {
             "trading_pair": msg["trading_pair"],
-            "trade_type": float(TradeType.SELL.value) if msg["m"] else float(TradeType.BUY.value),
-            "trade_id": msg["t"],
+            "trade_type": float(TradeType.BUY.value) if msg["type"] == "buy" else float(TradeType.SELL.value),
+            "trade_id": msg["id"],
             "update_id": ts,
-            "price": msg["p"],
-            "amount": msg["q"]
+            "price": msg["price"],
+            "amount": msg["amount"]
         }, timestamp=ts * 1e-3)

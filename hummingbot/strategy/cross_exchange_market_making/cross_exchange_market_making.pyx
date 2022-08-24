@@ -227,7 +227,6 @@ cdef class CrossExchangeMarketMakingStrategy(StrategyBase):
 
         for market_pair in self._market_pairs.values():
             warning_lines.extend(self.network_warning([market_pair.maker, market_pair.taker]))
-            self.logger().info("maker pair is {}, taker pair is {}".format(market_pair.maker, market_pair.taker))
             markets_df = self.market_status_data_frame([market_pair.maker, market_pair.taker])
             lines.extend(["", "  Markets:"] +
                          ["    " + line for line in str(markets_df).split("\n")])

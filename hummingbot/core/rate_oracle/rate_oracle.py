@@ -25,11 +25,12 @@ class RateOracleSource(Enum):
     """
     Supported sources for RateOracle
     """
+
     binance = 0
     coingecko = 1
     kucoin = 2
     ascend_ex = 3
-    coinhub = 4
+    coinbase = 4
 
 
 class RateOracle(NetworkBase):
@@ -38,6 +39,7 @@ class RateOracle(NetworkBase):
     It achieves this by query URL on a given source for prices and store them, either in cache or as an object member.
     The find_rate is then used on these prices to find a rate on a given pair.
     """
+
     # Set these below class members before query for rates
     source: RateOracleSource = RateOracleSource.binance
     global_token: str = "USDT"
@@ -50,12 +52,14 @@ class RateOracle(NetworkBase):
 
     binance_price_url = "https://api.binance.com/api/v3/ticker/bookTicker"
     binance_us_price_url = "https://api.binance.us/api/v3/ticker/bookTicker"
-    coingecko_usd_price_url = "https://api.coingecko.com/api/v3/coins/markets?category={}&order=market_cap_desc" \
-                              "&page={}&per_page=250&sparkline=false&vs_currency={}"
+    coingecko_usd_price_url = (
+        "https://api.coingecko.com/api/v3/coins/markets?category={}&order=market_cap_desc"
+        "&page={}&per_page=250&sparkline=false&vs_currency={}"
+    )
     coingecko_supported_vs_tokens_url = "https://api.coingecko.com/api/v3/simple/supported_vs_currencies"
     kucoin_price_url = "https://api.kucoin.com/api/v1/market/allTickers"
     ascend_ex_price_url = "https://ascendex.com/api/pro/v1/ticker"
-    coinhub_fiat_url = "https://sandbox-api.coinhub.mn/v1/fiats?channel=coinhub-sandbox"
+    coinbase_price_url = "https://api.coinbase.com/v2/exchange-rates?currency={}"
 
     coingecko_token_categories = [
         "cryptocurrency",
@@ -64,7 +68,8 @@ class RateOracle(NetworkBase):
         "decentralized-finance-defi",
         "smart-contract-platform",
         "stablecoins",
-        "wrapped-tokens"]
+        "wrapped-tokens",
+    ]
 
     @classmethod
     def get_instance(cls) -> "RateOracle":
@@ -105,8 +110,7 @@ class RateOracle(NetworkBase):
         except asyncio.CancelledError:
             raise
         except Exception:
-            self.logger().error("Unexpected error while waiting for data feed to get ready.",
-                                exc_info=True)
+            self.logger().error("Unexpected error while waiting for data feed to get ready.", exc_info=True)
 
     @property
     def name(self) -> str:
@@ -190,8 +194,11 @@ class RateOracle(NetworkBase):
             except asyncio.CancelledError:
                 raise
             except Exception:
-                self.logger().network(f"Error fetching new prices from {self.source.name}.", exc_info=True,
-                                      app_warning_msg=f"Couldn't fetch newest prices from {self.source.name}.")
+                self.logger().network(
+                    f"Error fetching new prices from {self.source.name}.",
+                    exc_info=True,
+                    app_warning_msg=f"Couldn't fetch newest prices from {self.source.name}.",
+                )
             await asyncio.sleep(1)
 
     @classmethod
@@ -200,6 +207,7 @@ class RateOracle(NetworkBase):
         Fetches prices of a specified source
         :return A dictionary of trading pairs and prices
         """
+        cls.logger().info("Trying to fetch oracle rate ...")
         if cls.source == RateOracleSource.binance:
             return await cls.get_binance_prices()
         elif cls.source == RateOracleSource.coingecko:
@@ -208,8 +216,8 @@ class RateOracle(NetworkBase):
             return await cls.get_kucoin_prices()
         elif cls.source == RateOracleSource.ascend_ex:
             return await cls.get_ascend_ex_prices()
-        elif cls.source == RateOracleSource.coinhub:
-            return await cls.get_coinhub_prices()
+        elif cls.source == RateOracleSource.coinbase:
+            return await cls.get_coinbase_prices()
         else:
             raise NotImplementedError
 
@@ -222,23 +230,25 @@ class RateOracle(NetworkBase):
         :return A dictionary of trading pairs and prices
         """
         results = {}
-        tasks = [cls.get_binance_prices_by_domain(cls.binance_price_url),
-                 cls.get_binance_prices_by_domain(cls.binance_us_price_url, "USD", domain="us")]
+        tasks = [
+            cls.get_binance_prices_by_domain(cls.binance_price_url),
+            cls.get_binance_prices_by_domain(cls.binance_us_price_url, "USD", domain="us"),
+        ]
         task_results = await safe_gather(*tasks, return_exceptions=True)
         for task_result in task_results:
             if isinstance(task_result, Exception):
-                cls.logger().error("Unexpected error while retrieving rates from Binance. "
-                                   "Check the log file for more info.")
+                cls.logger().error(
+                    "Unexpected error while retrieving rates from Binance. " "Check the log file for more info."
+                )
                 break
             else:
                 results.update(task_result)
         return results
 
     @classmethod
-    async def get_binance_prices_by_domain(cls,
-                                           url: str,
-                                           quote_symbol: str = None,
-                                           domain: str = "com") -> Dict[str, Decimal]:
+    async def get_binance_prices_by_domain(
+        cls, url: str, quote_symbol: str = None, domain: str = "com"
+    ) -> Dict[str, Decimal]:
         """
         Fetches binance prices
         :param url: A URL end point
@@ -249,6 +259,7 @@ class RateOracle(NetworkBase):
         results = {}
         connector = cls._binance_connector_without_private_keys(domain=domain)
         client = await cls._http_client()
+
         async with client.request("GET", url) as resp:
             records = await resp.json()
             for record in records:
@@ -261,13 +272,14 @@ class RateOracle(NetworkBase):
                     base, quote = trading_pair.split("-")
                     if quote != quote_symbol:
                         continue
-                if (trading_pair and record["bidPrice"] is not None
-                        and record["askPrice"] is not None
-                        and Decimal(record["bidPrice"]) > 0
-                        and Decimal(record["askPrice"])):
-                    results[trading_pair] = ((Decimal(record["bidPrice"]) + Decimal(record["askPrice"]))
-                                             / Decimal("2"))
-        print(results)
+                if (
+                    trading_pair
+                    and record["bidPrice"] is not None
+                    and record["askPrice"] is not None
+                    and Decimal(record["bidPrice"]) > 0
+                    and Decimal(record["askPrice"])
+                ):
+                    results[trading_pair] = (Decimal(record["bidPrice"]) + Decimal(record["askPrice"])) / Decimal("2")
         return results
 
     @classmethod
@@ -309,18 +321,6 @@ class RateOracle(NetworkBase):
                     results[pair] = (Decimal(str(record["ask"][0])) + Decimal(str(record["bid"][0]))) / Decimal("2")
         return results
 
-    # @classmethod
-    # @async_ttl_cache(ttl=30, maxsize=1)
-    # async def get_coinhub_prices(cls) -> Dict[str, Decimal]:
-    #     result = {}
-    #     client = await cls._http_client()
-    #     async with client.request("GET", cls.coinhub_fiat_url) as resp:
-    #         records = await resp.json(content_type=None)
-    #         # pair = await CoinhubAPIOrderBookDataSource.trading_pair_associated_to_exchange_symbol(record["symbol"])
-    #         # for record in records["data"]:
-    #         #     if Decimal(record["ask"][0]) > 0 and Decimal(record["bid"][0]) > 0:
-        # return result
-
     @classmethod
     @async_ttl_cache(ttl=30, maxsize=1)
     async def get_coingecko_prices(cls, vs_currency: str) -> Dict[str, Decimal]:
@@ -339,14 +339,17 @@ class RateOracle(NetworkBase):
                 cls._cgecko_supported_vs_tokens = records
         if vs_currency.lower() not in cls._cgecko_supported_vs_tokens:
             vs_currency = "usd"
-        tasks = [asyncio.get_event_loop().create_task(cls.get_coingecko_prices_by_page(vs_currency, i, category))
-                 for i in range(1, 3)
-                 for category in cls.coingecko_token_categories]
+        tasks = [
+            asyncio.get_event_loop().create_task(cls.get_coingecko_prices_by_page(vs_currency, i, category))
+            for i in range(1, 3)
+            for category in cls.coingecko_token_categories
+        ]
         task_results = await safe_gather(*tasks, return_exceptions=True)
         for task_result in task_results:
             if isinstance(task_result, Exception):
-                cls.logger().error("Unexpected error while retrieving rates from Coingecko. "
-                                   "Check the log file for more info.")
+                cls.logger().error(
+                    "Unexpected error while retrieving rates from Coingecko. " "Check the log file for more info."
+                )
                 break
             else:
                 results.update(task_result)
@@ -374,6 +377,50 @@ class RateOracle(NetworkBase):
                     results[pair] = Decimal(str(record["current_price"]))
         return results
 
+    @classmethod
+    @async_ttl_cache(ttl=30, maxsize=1)
+    async def get_coinbase_prices(cls) -> Dict[str, Decimal]:
+        """
+        Fetches Coinbase prices from coinbase.com where only MNT and USD pair
+        :return A dictionary of trading pairs and prices
+        """
+        results = {}
+        tasks = [
+            cls.get_coinbase_prices_by_currency("MNT"),
+            cls.get_coinbase_prices_by_currency("USD"),
+        ]
+        task_results = await safe_gather(*tasks, return_exceptions=True)
+        for task_result in task_results:
+            if isinstance(task_result, Exception):
+                cls.logger().error(
+                    "Unexpected error while retrieving rates from Binance. " "Check the log file for more info."
+                )
+                break
+            else:
+                results.update(task_result)
+        return results
+
+    @classmethod
+    async def get_coinbase_prices_by_currency(cls, currency: str) -> Dict[str, Decimal]:
+        """
+        Fetches Coinbase exchange rates.
+
+        :param vs_currency: A currency (crypto or fiat) to get prices of tokens in, see
+        https://api.coinbase.com/v2/currencies for the current supported list
+        :param currency
+
+        :return A dictionary of fiat rates
+        """
+        results = {}
+        client = await cls._http_client()
+        async with client.request("GET", cls.coinbase_price_url.format(currency)) as resp:
+            body = await resp.json()
+            rates = body["data"]["rates"]
+            for quote, price in rates.items():
+                pair = f"{currency}-{quote.upper()}"
+                results[pair] = Decimal(str(price))
+        return results
+
     async def start_network(self):
         await self.stop_network()
         self._fetch_price_task = safe_ensure_future(self.fetch_price_loop())
@@ -397,7 +444,7 @@ class RateOracle(NetworkBase):
         return NetworkStatus.CONNECTED
 
     @classmethod
-    def _binance_connector_without_private_keys(cls, domain: str) -> 'BinanceExchange':
+    def _binance_connector_without_private_keys(cls, domain: str) -> "BinanceExchange":
         from hummingbot.connector.exchange.binance.binance_exchange import BinanceExchange
 
         client_config_map = cls._get_client_config_map()
@@ -407,10 +454,11 @@ class RateOracle(NetworkBase):
             binance_api_secret="",
             trading_pairs=[],
             trading_required=False,
-            domain=domain)
+            domain=domain,
+        )
 
     @classmethod
-    def _kucoin_connector_without_private_keys(cls) -> 'KucoinExchange':
+    def _kucoin_connector_without_private_keys(cls) -> "KucoinExchange":
         from hummingbot.connector.exchange.kucoin.kucoin_exchange import KucoinExchange
 
         client_config_map = cls._get_client_config_map()
@@ -420,7 +468,8 @@ class RateOracle(NetworkBase):
             kucoin_passphrase="",
             kucoin_secret_key="",
             trading_pairs=[],
-            trading_required=False)
+            trading_required=False,
+        )
 
     @classmethod
     def _get_client_config_map(cls) -> "ClientConfigAdapter":

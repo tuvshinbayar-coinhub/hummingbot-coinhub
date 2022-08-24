@@ -28,7 +28,7 @@ SNAPSHOT_PATH_URL = "/market/depth"
 SERVER_TIME_PATH_URL = "/time"
 
 # Private API endpoints or BinanceClient function
-WS_SIGN_PATH_URL = "/api/sign"
+WS_SIGN_PATH_URL = "/v1/api/sign"
 ACCOUNTS_PATH_URL = "/api/balance/query"
 MY_TRADES_PATH_URL = "/api/order/user_deals"
 ORDER_PATH_URL = "/api/order/create"
@@ -68,8 +68,8 @@ ORDER_STATE = {
 }
 
 # Websocket event types
-DIFF_EVENT_TYPE = "depthUpdate"
-TRADE_EVENT_TYPE = "trade"
+DIFF_EVENT_TYPE = "depth.subscribe"
+TRADE_EVENT_TYPE = "deals.subscribe"
 
 RATE_LIMITS = [
     # Pools
