@@ -207,7 +207,6 @@ class RateOracle(NetworkBase):
         Fetches prices of a specified source
         :return A dictionary of trading pairs and prices
         """
-        cls.logger().info("Trying to fetch oracle rate ...")
         if cls.source == RateOracleSource.binance:
             return await cls.get_binance_prices()
         elif cls.source == RateOracleSource.coingecko:

@@ -31,7 +31,7 @@ SERVER_TIME_PATH_URL = "/time"
 WS_SIGN_PATH_URL = "/v1/api/sign"
 ACCOUNTS_PATH_URL = "/api/balance/query"
 MY_TRADES_PATH_URL = "/api/order/user_deals"
-ORDER_PATH_URL = "/api/order/create"
+CREATE_ORDER_PATH_URL = "/api/order/create"
 ORDER_CANCEL_PATH_URL = "/api/order/cancel"
 GET_ORDER_PATH_URL = "/api/order/detail"
 
@@ -124,6 +124,26 @@ RATE_LIMITS = [
         limit=MAX_REQUEST,
         time_interval=ONE_MINUTE,
         linked_limits=[LinkedLimitWeightPair(REQUEST_WEIGHT, 10)],
+    ),
+    RateLimit(
+        limit_id=CREATE_ORDER_PATH_URL,
+        limit=MAX_REQUEST,
+        time_interval=ONE_MINUTE,
+        linked_limits=[
+            LinkedLimitWeightPair(REQUEST_WEIGHT, 1),
+            LinkedLimitWeightPair(ORDERS, 1),
+            LinkedLimitWeightPair(ORDERS_24HR, 1),
+        ],
+    ),
+    RateLimit(
+        limit_id=ORDER_CANCEL_PATH_URL,
+        limit=MAX_REQUEST,
+        time_interval=ONE_MINUTE,
+        linked_limits=[
+            LinkedLimitWeightPair(REQUEST_WEIGHT, 1),
+            LinkedLimitWeightPair(ORDERS, 1),
+            LinkedLimitWeightPair(ORDERS_24HR, 1),
+        ],
     ),
     RateLimit(
         limit_id=GET_ORDER_PATH_URL,

@@ -1,4 +1,5 @@
 import asyncio
+import time
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
@@ -202,14 +203,14 @@ class CoinhubExchange(ExchangePyBase):
         side = CONSTANTS.SIDE_BUY if trade_type is TradeType.BUY else CONSTANTS.SIDE_SELL
         symbol = await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair)
         api_params = {
-            "market": symbol,
             "amount": amount_str,
+            "client_id": CONSTANTS.API_CLIENT_ID,
+            "market": symbol,
             "price": price_str,
             "side": side,
-            "client_id": CONSTANTS.API_CLIENT_ID,
         }
-
-        order_result = await self._api_post(path_url=CONSTANTS.ORDER_PATH_URL, data=api_params, is_auth_required=True)
+        order_resp = await self._api_post(path_url=CONSTANTS.CREATE_ORDER_PATH_URL, data=api_params, is_auth_required=True)
+        order_result = order_resp["data"]
         o_id = str(order_result["id"])
         transact_time = order_result["mtime"] * 1e-3
         return (o_id, transact_time)
@@ -218,12 +219,15 @@ class CoinhubExchange(ExchangePyBase):
         symbol = await self.exchange_symbol_associated_to_pair(trading_pair=tracked_order.trading_pair)
         api_params = {
             "market": symbol,
-            "order_id": order_id,
+            "order_id": tracked_order.exchange_order_id
         }
-        cancel_result = await self._api_post(
+        cancel_resp = await self._api_post(
             path_url=CONSTANTS.ORDER_CANCEL_PATH_URL, data=api_params, is_auth_required=True
         )
-        if cancel_result["data"].get("status") == "done":
+        cancel_result = cancel_resp["data"]
+        if not cancel_resp["data"] and cancel_resp["code"] == 10:
+            return True
+        if cancel_result and cancel_result["status"] == "done":
             return True
         return False
 
@@ -486,7 +490,7 @@ class CoinhubExchange(ExchangePyBase):
                     path_url=CONSTANTS.GET_ORDER_PATH_URL,
                     data={
                         "market": await self.exchange_symbol_associated_to_pair(trading_pair=o.trading_pair),
-                        "order_id": o.client_order_id,
+                        "order_id": o.exchange_order_id,
                     },
                     is_auth_required=True,
                 )
@@ -496,6 +500,7 @@ class CoinhubExchange(ExchangePyBase):
             results = await safe_gather(*tasks, return_exceptions=True)
             for order_update, tracked_order in zip(results, tracked_orders):
                 client_order_id = tracked_order.client_order_id
+                exchange_order_id = tracked_order.exchange_order_id
 
                 # If the order has already been canceled or has failed do nothing
                 if client_order_id not in self.in_flight_orders:
@@ -503,8 +508,8 @@ class CoinhubExchange(ExchangePyBase):
 
                 if isinstance(order_update, Exception):
                     self.logger().network(
-                        f"Error fetching status update for the order {client_order_id}: {order_update}.",
-                        app_warning_msg=f"Failed to fetch status update for the order {client_order_id}.",
+                        f"Error fetching status update for the order {exchange_order_id}: {order_update}.",
+                        app_warning_msg=f"Failed to fetch status update for the order {exchange_order_id}.",
                     )
                     # Wait until the order not found error have repeated a few times before actually treating
                     # it as failed. See: https://github.com/CoinAlpha/hummingbot/issues/601
@@ -512,19 +517,29 @@ class CoinhubExchange(ExchangePyBase):
 
                 else:
                     # Update order execution status
+                    update_timestamp = time.time()
                     if "data" in order_update:
-                        if "data" in order_update["data"] and order_update["data"] is not None:
-                            new_state = CONSTANTS.ORDER_STATE[order_update["data"]["status"]]
-                        else:
+                        if "data" in order_update["data"] and order_update["data"]["code"] == 501:
                             new_state = OrderState.CANCELED
+                        else:
+                            if "data" in order_update["data"]:
+                                new_state = CONSTANTS.ORDER_STATE[order_update["data"]["data"]["status"]]
+                                if new_state == OrderState.OPEN and Decimal(order_update["data"]["data"]["deal_stock"]) > Decimal("0"):
+                                    new_state = OrderState.PARTIALLY_FILLED
+                                    update_timestamp = order_update["data"]["data"]["ftime"]
+                            else:
+                                new_state = CONSTANTS.ORDER_STATE[order_update["data"]["status"]]
+                                if new_state == OrderState.OPEN and Decimal(order_update["data"]["deal_stock"]) > Decimal("0"):
+                                    new_state = OrderState.PARTIALLY_FILLED
+                                    update_timestamp = order_update["data"]["ftime"]
                     else:
                         new_state = OrderState.FAILED
 
                     update = OrderUpdate(
                         client_order_id=client_order_id,
-                        exchange_order_id=client_order_id if new_state == OrderState.CANCELED else str(order_update["id"]),
+                        exchange_order_id=exchange_order_id,
                         trading_pair=tracked_order.trading_pair,
-                        update_timestamp=order_update["ftime"] * 1e-3,
+                        update_timestamp=update_timestamp,
                         new_state=new_state,
                     )
                     self._order_tracker.process_order_update(update)

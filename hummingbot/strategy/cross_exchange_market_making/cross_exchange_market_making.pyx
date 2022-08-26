@@ -858,6 +858,7 @@ cdef class CrossExchangeMarketMakingStrategy(StrategyBase):
         top_bid_price, top_ask_price = self.c_get_top_bid_ask_from_price_samples(market_pair)
 
         if is_bid:
+            price_above_bid = Decimal('nan')
             if not Decimal.is_nan(top_bid_price):
                 # Calculate the next price above top bid
                 price_quantum = maker_market.c_get_order_price_quantum(
@@ -865,7 +866,6 @@ cdef class CrossExchangeMarketMakingStrategy(StrategyBase):
                     top_bid_price
                 )
                 price_above_bid = (ceil(top_bid_price / price_quantum) + 1) * price_quantum
-
             taker_price = self.c_calculate_effective_hedging_price(market_pair, is_bid, size)
 
             # you are buying on the maker market and selling on the taker market
@@ -1154,13 +1154,6 @@ cdef class CrossExchangeMarketMakingStrategy(StrategyBase):
             self._config_map.conversion_rate_mode.get_taker_to_maker_conversion_rate(market_pair)
         )
         return quote_rate / base_rate
-        # else:
-        #     market_pairs = list(self._market_pairs.values())[0]
-        #     quote_pair = f"{market_pairs.taker.quote_asset}-{market_pairs.maker.quote_asset}"
-        #     base_pair = f"{market_pairs.taker.base_asset}-{market_pairs.maker.base_asset}"
-        #     quote_rate = RateOracle.get_instance().rate(quote_pair)
-        #     base_rate = RateOracle.get_instance().rate(base_pair)
-        #     return quote_rate / base_rate
 
     cdef c_check_and_create_new_orders(self, object market_pair, bint has_active_bid, bint has_active_ask):
         """

@@ -19,13 +19,11 @@ class CoinhubAuth(AuthBase):
         path_url = urlparse(request.url).path
 
         if request.method == RESTMethod.POST:
-            content_to_sign = f"{timestamp}{request.method}{path_url}"
-            encoded_param = urlencode(json.loads(request.data))
-            content_to_sign += encoded_param
-            if "" == encoded_param:
-                content_to_sign += "{}"
+            data = json.dumps(json.loads(request.data), separators=(',', ":"))
+            content_to_sign = f"{timestamp}{request.method}{path_url}{data}"
         else:
-            content_to_sign = f"{timestamp}{request.method}{path_url}"
+            encoded_param = urlencode(request.params)
+            content_to_sign = f"{timestamp}{request.method}{path_url}{encoded_param}"
 
         signature = hmac.new(
             self.secret_key.encode("utf8"), msg=content_to_sign.encode("utf8"), digestmod=hashlib.sha256
