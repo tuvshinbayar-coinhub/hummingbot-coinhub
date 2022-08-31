@@ -64,7 +64,6 @@ MAX_REQUEST = 5000
 ORDER_STATE = {
     "opened": OrderState.OPEN,
     "done": OrderState.FILLED,
-    "partially_filled": OrderState.PARTIALLY_FILLED,
 }
 
 # Websocket event types

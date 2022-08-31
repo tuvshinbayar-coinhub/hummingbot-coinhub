@@ -212,11 +212,13 @@ class CoinhubExchange(ExchangePyBase):
         order_resp = await self._api_post(path_url=CONSTANTS.CREATE_ORDER_PATH_URL, data=api_params, is_auth_required=True)
         order_result = order_resp["data"]
         o_id = str(order_result["id"])
-        transact_time = order_result["mtime"] * 1e-3
+        transact_time = order_result["ctime"] * 1e-3
         return (o_id, transact_time)
 
     async def _place_cancel(self, order_id: str, tracked_order: InFlightOrder):
         symbol = await self.exchange_symbol_associated_to_pair(trading_pair=tracked_order.trading_pair)
+        if not tracked_order.exchange_order_id:
+            return True
         api_params = {
             "market": symbol,
             "order_id": tracked_order.exchange_order_id
@@ -325,58 +327,68 @@ class CoinhubExchange(ExchangePyBase):
         """
         async for event_message in self._iter_user_event_queue():
             try:
-                event_type = event_message.get("e")
-                # Refer to https://github.com/binance-exchange/binance-official-api-docs/blob/master/user-data-stream.md
-                # As per the order update section in Binance the ID of the order being canceled is under the "C" key
-                if event_type == "executionReport":
-                    execution_type = event_message.get("x")
-                    if execution_type != "CANCELED":
-                        client_order_id = event_message.get("c")
-                    else:
-                        client_order_id = event_message.get("C")
+                event_type = event_message.get("method")
+                params = event_message.get("params")
+                if event_type == "order.update":
+                    # clean = params[0]
+                    data = params[1]
+                    tracked_order = self._order_tracker.fetch_order(exchange_order_id=str(data["id"]))
+                    if tracked_order is not None:
+                        new_state = CONSTANTS.ORDER_STATE[data["status"]]
+                        fill_timestamp = data["mtime"]
+                        if "ftime" in data:
+                            fill_timestamp = data["ftime"]
+                        if (new_state == OrderState.FILLED and Decimal(data["deal_stock"]) == Decimal(data["amount"])) or (new_state == OrderState.OPEN and Decimal(data["deal_stock"]) > Decimal("0.0")):
+                            if new_state == OrderState.OPEN:
+                                new_state = OrderState.PARTIALLY_FILLED
+                            cumulative_filled_amount = Decimal(data["deal_stock"])
+                            filled_amount = cumulative_filled_amount - tracked_order.executed_amount_base
+                            cumulative_fee = Decimal(data["deal_fee"])
+                            fee_token = tracked_order.quote_asset
+                            if tracked_order.trade_type == TradeType.BUY:
+                                fee_token = tracked_order.base_asset
+                            fee_already_paid = tracked_order.cumulative_fee_paid(token=fee_token, exchange=self)
+                            if cumulative_fee > fee_already_paid:
+                                fee = TradeFeeBase.new_spot_fee(
+                                    fee_schema=self.trade_fee_schema(),
+                                    trade_type=tracked_order.trade_type,
+                                    percent_token=fee_token,
+                                    flat_fees=[TokenAmount(amount=cumulative_fee - fee_already_paid, token=fee_token)]
+                                )
+                            else:
+                                fee = TradeFeeBase.new_spot_fee(
+                                    fee_schema=self.trade_fee_schema(),
+                                    trade_type=tracked_order.trade_type)
 
-                    if execution_type == "TRADE":
-                        tracked_order = self._order_tracker.fetch_order(client_order_id=client_order_id)
-                        if tracked_order is not None:
-                            fee = TradeFeeBase.new_spot_fee(
-                                fee_schema=self.trade_fee_schema(),
-                                trade_type=tracked_order.trade_type,
-                                percent_token=event_message["N"],
-                                flat_fees=[TokenAmount(amount=Decimal(event_message["n"]), token=event_message["N"])],
-                            )
                             trade_update = TradeUpdate(
-                                trade_id=str(event_message["t"]),
-                                client_order_id=client_order_id,
-                                exchange_order_id=str(event_message["i"]),
+                                trade_id=str(data["mtime"]),
+                                exchange_order_id=tracked_order.exchange_order_id,
+                                client_order_id=tracked_order.client_order_id,
                                 trading_pair=tracked_order.trading_pair,
                                 fee=fee,
-                                fill_base_amount=Decimal(event_message["l"]),
-                                fill_quote_amount=Decimal(event_message["l"]) * Decimal(event_message["L"]),
-                                fill_price=Decimal(event_message["L"]),
-                                fill_timestamp=event_message["T"] * 1e-3,
+                                fill_base_amount=filled_amount,
+                                fill_quote_amount=Decimal(data["deal_money"]) - tracked_order.executed_amount_quote,
+                                fill_price=Decimal(data["price"]),
+                                fill_timestamp=int(fill_timestamp) * 1e-3,
                             )
                             self._order_tracker.process_trade_update(trade_update)
-
-                    tracked_order = self.in_flight_orders.get(client_order_id)
-                    if tracked_order is not None:
+                        elif new_state == OrderState.FILLED and Decimal(data["deal_stock"]) < Decimal(data["amount"]):
+                            new_state = OrderState.CANCELED
                         order_update = OrderUpdate(
                             trading_pair=tracked_order.trading_pair,
-                            update_timestamp=event_message["E"] * 1e-3,
-                            new_state=CONSTANTS.ORDER_STATE[event_message["X"]],
-                            client_order_id=client_order_id,
-                            exchange_order_id=str(event_message["i"]),
+                            update_timestamp=int(fill_timestamp) * 1e-3,
+                            new_state=new_state,
+                            client_order_id=tracked_order.client_order_id,
+                            exchange_order_id=tracked_order.exchange_order_id,
                         )
                         self._order_tracker.process_order_update(order_update=order_update)
-
-                elif event_type == "outboundAccountPosition":
-                    balances = event_message["B"]
-                    for balance_entry in balances:
-                        asset_name = balance_entry["a"]
-                        free_balance = Decimal(balance_entry["f"])
-                        total_balance = Decimal(balance_entry["f"]) + Decimal(balance_entry["l"])
+                elif event_type == "asset.update":
+                    data = params[0]
+                    for asset_name, balance_info in data.items():
+                        free_balance = Decimal(balance_info["available"])
+                        total_balance = free_balance + Decimal(balance_info["freeze"])
                         self._account_available_balances[asset_name] = free_balance
                         self._account_balances[asset_name] = total_balance
-
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -506,7 +518,7 @@ class CoinhubExchange(ExchangePyBase):
                 if client_order_id not in self.in_flight_orders:
                     continue
 
-                if isinstance(order_update, Exception):
+                if isinstance(order_update, Exception) or int(order_update["code"]) >= 500:
                     self.logger().network(
                         f"Error fetching status update for the order {exchange_order_id}: {order_update}.",
                         app_warning_msg=f"Failed to fetch status update for the order {exchange_order_id}.",
@@ -524,14 +536,20 @@ class CoinhubExchange(ExchangePyBase):
                         else:
                             if "data" in order_update["data"]:
                                 new_state = CONSTANTS.ORDER_STATE[order_update["data"]["data"]["status"]]
-                                if new_state == OrderState.OPEN and Decimal(order_update["data"]["data"]["deal_stock"]) > Decimal("0"):
+                                if new_state == OrderState.OPEN and Decimal(order_update["data"]["data"]["amount"]) != Decimal(order_update["data"]["data"]["left"]):
                                     new_state = OrderState.PARTIALLY_FILLED
-                                    update_timestamp = order_update["data"]["data"]["ftime"]
+                                    if "ftime" in order_update["data"]:
+                                        update_timestamp = order_update["data"]["data"]["ftime"]
+                                    else:
+                                        update_timestamp = order_update["data"]["data"]["mtime"]
                             else:
                                 new_state = CONSTANTS.ORDER_STATE[order_update["data"]["status"]]
-                                if new_state == OrderState.OPEN and Decimal(order_update["data"]["deal_stock"]) > Decimal("0"):
+                                if new_state == OrderState.OPEN and Decimal(order_update["data"]["amount"]) != Decimal(order_update["data"]["left"]):
                                     new_state = OrderState.PARTIALLY_FILLED
-                                    update_timestamp = order_update["data"]["ftime"]
+                                    if "ftime" in order_update["data"]:
+                                        update_timestamp = order_update["data"]["ftime"]
+                                    else:
+                                        update_timestamp = order_update["data"]["mtime"]
                     else:
                         new_state = OrderState.FAILED
 

@@ -46,6 +46,8 @@ class CoinhubAPIUserStreamDataSource(UserStreamTrackerDataSource):
         ws: WSAssistant = await self._get_ws_assistant()
         await ws.connect(ws_url=CONSTANTS.WSS_URL.format(endpoint=CONSTANTS.PRIVATE_EXCHANGE_ENDPOINT, domain=self._domain),
                          ping_timeout=CONSTANTS.WS_HEARTBEAT_TIME_INTERVAL)
+        await ws.send(WSJSONRequest({}, is_auth_required=True))
+        await self._sleep(2.0)
         return ws
 
     async def _subscribe_channels(self, websocket_assistant: WSAssistant):
@@ -59,12 +61,21 @@ class CoinhubAPIUserStreamDataSource(UserStreamTrackerDataSource):
         try:
             symbols = [await self._connector.exchange_symbol_associated_to_pair(trading_pair=trading_pair)
                        for trading_pair in self._trading_pairs]
+
             payload = {
-                "id": 3,
+                "id": 222222,
+                "method": "asset.subscribe",
+                "params": [trading_pair.split("-")[0] for trading_pair in self._trading_pairs],
+            }
+            subscribe_request: WSJSONRequest = WSJSONRequest(payload=payload)
+
+            await websocket_assistant.send(subscribe_request)
+            payload = {
+                "id": 333333,
                 "method": "order.subscribe",
                 "params": [symbol for symbol in symbols],
             }
-            subscribe_request: WSJSONRequest = WSJSONRequest(payload=payload, is_auth_required=True)
+            subscribe_request: WSJSONRequest = WSJSONRequest(payload=payload)
             await websocket_assistant.send(subscribe_request)
 
             self.logger().info("Subscribed to private account and orders channels...")
@@ -74,11 +85,28 @@ class CoinhubAPIUserStreamDataSource(UserStreamTrackerDataSource):
             self.logger().exception("Unexpected error occurred subscribing to order book trading and delta streams...")
             raise
 
-    async def _process_websocket_messages(self, websocket_assistant: WSAssistant, queue: asyncio.Queue):
-        async for ws_response in websocket_assistant.iter_messages():
-            data = ws_response.data
-            self.logger().info(data)
-            await self._process_event_message(event_message=data, queue=queue)
+    async def listen_for_user_stream(self, output: asyncio.Queue):
+        """
+        Connects to the user private channel in the exchange using a websocket connection. With the established
+        connection listens to all balance events and order updates provided by the exchange, and stores them in the
+        output queue
+
+        :param output: the queue to use to store the received messages
+        """
+        while True:
+            try:
+                self._ws_assistant = await self._connected_websocket_assistant()
+                await self._subscribe_channels(websocket_assistant=self._ws_assistant)
+                await self._ws_assistant.ping()  # to update last_recv_timestamp
+                await self._process_websocket_messages(websocket_assistant=self._ws_assistant, queue=output)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self.logger().exception("Unexpected error while listening to user stream. Retrying after 5 seconds...")
+                await self._sleep(5.0)
+            finally:
+                await self._on_user_stream_interruption(websocket_assistant=self._ws_assistant)
+                self._ws_assistant = None
 
     async def _get_ws_assistant(self) -> WSAssistant:
         if self._ws_assistant is None:

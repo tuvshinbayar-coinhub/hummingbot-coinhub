@@ -30,7 +30,8 @@ from .order_id_market_pair_tracker import OrderIDMarketPairTracker
 
 from hummingbot.strategy.cross_exchange_market_making.cross_exchange_market_making_config_map_pydantic import (
     CrossExchangeMarketMakingConfigMap,
-    PassiveOrderRefreshMode
+    PassiveOrderRefreshMode,
+    OracleConversionRateMode
 )
 
 NaN = float("nan")
@@ -317,6 +318,11 @@ cdef class CrossExchangeMarketMakingStrategy(StrategyBase):
 
             if not self._all_markets_ready:
                 self._all_markets_ready = all([market.ready for market in self._sb_markets])
+                if self._config_map.conversion_rate_mode.hb_config.__class__ == OracleConversionRateMode and not RateOracle.get_instance().ready:
+                    # Oracle rate not ready. Don't do anything.
+                    if should_report_warnings:
+                        self.logger().warning(f"Rate oracle is not ready. No market making trades are permitted.")
+                    return
                 if not self._all_markets_ready:
                     # Markets not ready yet. Don't do anything.
                     if should_report_warnings:
