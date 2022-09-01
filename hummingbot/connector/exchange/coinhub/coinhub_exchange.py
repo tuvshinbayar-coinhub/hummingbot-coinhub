@@ -151,7 +151,7 @@ class CoinhubExchange(ExchangePyBase):
         return NetworkStatus.CONNECTED
 
     def supported_order_types(self):
-        return [OrderType.LIMIT, OrderType.LIMIT_MAKER]
+        return [OrderType.LIMIT, OrderType.LIMIT_MAKER, OrderType.MARKET]
 
     def _create_web_assistants_factory(self) -> WebAssistantsFactory:
         return web_utils.build_api_factory(
@@ -206,10 +206,9 @@ class CoinhubExchange(ExchangePyBase):
             "amount": amount_str,
             "client_id": CONSTANTS.API_CLIENT_ID,
             "market": symbol,
-            "side": side,
+            **({'price': price_str} if order_type == OrderType.LIMIT or order_type == OrderType.LIMIT_MAKER is not None else {}),
+            "side": side
         }
-        if order_type == OrderType.LIMIT or order_type == OrderType.LIMIT_MAKER:
-            api_params["price"] = price_str
         order_resp = await self._api_post(path_url=CONSTANTS.CREATE_ORDER_PATH_URL, data=api_params, is_auth_required=True)
         order_result = order_resp["data"]
         o_id = str(order_result["id"])
@@ -282,6 +281,7 @@ class CoinhubExchange(ExchangePyBase):
                         min_order_size=min_order_size,
                         min_price_increment=min_price_inc,
                         min_base_amount_increment=min_amount_inc,
+                        # min_notional_size=min(min_price_inc * min_order_size, Decimal("0.00000001"))
                     )
                 )
 
