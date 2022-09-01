@@ -206,9 +206,10 @@ class CoinhubExchange(ExchangePyBase):
             "amount": amount_str,
             "client_id": CONSTANTS.API_CLIENT_ID,
             "market": symbol,
-            "price": price_str,
             "side": side,
         }
+        if order_type == OrderType.LIMIT or order_type == OrderType.LIMIT_MAKER:
+            api_params["price"] = price_str
         order_resp = await self._api_post(path_url=CONSTANTS.CREATE_ORDER_PATH_URL, data=api_params, is_auth_required=True)
         order_result = order_resp["data"]
         o_id = str(order_result["id"])
