@@ -209,7 +209,9 @@ class CoinhubExchange(ExchangePyBase):
             **({'price': price_str} if order_type == OrderType.LIMIT or order_type == OrderType.LIMIT_MAKER is not None else {}),
             "side": side
         }
+        self.logger().debug(f"Api Params: {api_params}")
         order_resp = await self._api_post(path_url=CONSTANTS.CREATE_ORDER_PATH_URL, data=api_params, is_auth_required=True)
+        self.logger().debug(f"Api Resp: {order_resp}")
         order_result = order_resp["data"]
         o_id = str(order_result["id"])
         transact_time = order_result["ctime"] * 1e-3
