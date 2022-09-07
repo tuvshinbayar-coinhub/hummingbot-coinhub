@@ -30,7 +30,7 @@ class RateMaker(ScriptStrategyBase):
     maker_source_name: str = "coinhub"
     maker_trading_pair: str = "ETH-MNT"
     maker_base_asset, maker_quote_asset = split_hb_trading_pair(maker_trading_pair)
-    taker_source_name: str = "binance"
+    taker_source_name: str = "binance_paper_trade"
     taker_trading_pair: str = "ETH-USDT"
     taker_base_asset, taker_quote_asset = split_hb_trading_pair(taker_trading_pair)
 

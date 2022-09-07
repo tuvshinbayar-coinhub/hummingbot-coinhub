@@ -100,3 +100,5 @@ To have your pull request reviewed by the community, submit a [Pull Request Prop
 
 - **License**: Hummingbot is licensed under [Apache 2.0](./LICENSE).
 - **Data collection**: read important information regarding [Hummingbot Data Collection](./DATA_COLLECTION.md).
+
+docker build . -t hummingbot-coinhub-sandbox --platform=linux/amd64
