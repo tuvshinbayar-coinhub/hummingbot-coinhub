@@ -4,7 +4,7 @@ import json
 import time
 from urllib.parse import urlencode, urlparse
 
-from hummingbot.connector.exchange.coinhub_sandbox import coinhub_constants as CONSTANTS
+from hummingbot.connector.exchange.coinhub_sandbox import coinhub_sandbox_constants as CONSTANTS
 from hummingbot.core.web_assistant.auth import AuthBase
 from hummingbot.core.web_assistant.connections.data_types import RESTMethod, RESTRequest, WSJSONRequest
 

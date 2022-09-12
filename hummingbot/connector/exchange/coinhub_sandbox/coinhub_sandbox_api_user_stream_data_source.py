@@ -1,7 +1,7 @@
 import asyncio
 from typing import TYPE_CHECKING, List, Optional
 
-from hummingbot.connector.exchange.coinhub_sandbox import coinhub_constants as CONSTANTS
+from hummingbot.connector.exchange.coinhub_sandbox import coinhub_sandbox_constants as CONSTANTS
 from hummingbot.connector.exchange.coinhub_sandbox.coinhub_sandbox_auth import CoinhubAuth
 from hummingbot.core.data_type.user_stream_tracker_data_source import UserStreamTrackerDataSource
 from hummingbot.core.web_assistant.connections.data_types import WSJSONRequest
