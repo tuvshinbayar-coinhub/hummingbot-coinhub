@@ -110,7 +110,7 @@ class CoinhubAPIOrderBookDataSource(OrderBookTrackerDataSource):
 
     async def _connected_websocket_assistant(self) -> WSAssistant:
         ws: WSAssistant = await self._api_factory.get_ws_assistant()
-        await ws.connect(ws_url=CONSTANTS.WSS_URL.format(endpoint=CONSTANTS.DEFAULT_ENDPOINT, domain=self._domain),
+        await ws.connect(ws_url=CONSTANTS.WSS_URL.format(endpoint=CONSTANTS.PUBLIC_API_ENDPOINT, domain=self._domain),
                          ping_timeout=CONSTANTS.WS_HEARTBEAT_TIME_INTERVAL)
         return ws
 

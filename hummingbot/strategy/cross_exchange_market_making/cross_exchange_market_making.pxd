@@ -12,6 +12,7 @@ cdef class CrossExchangeMarketMakingStrategy(StrategyBase):
         set _maker_markets
         set _taker_markets
         bint _all_markets_ready
+        bint _rate_oracle_ready
         bint _adjust_orders_enabled
         dict _anti_hysteresis_timers
         double _last_timestamp

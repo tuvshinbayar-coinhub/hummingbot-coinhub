@@ -4,12 +4,12 @@ import json
 import time
 from urllib.parse import urlencode, urlparse
 
-from hummingbot.connector.exchange.coinhub_sandbox import coinhub_sandbox_constants as CONSTANTS
+from hummingbot.connector.exchange.coinhub_test import coinhub_test_constants as CONSTANTS
 from hummingbot.core.web_assistant.auth import AuthBase
 from hummingbot.core.web_assistant.connections.data_types import RESTMethod, RESTRequest, WSJSONRequest
 
 
-class CoinhubSandboxAuth(AuthBase):
+class CoinhubTestAuth(AuthBase):
     def __init__(self, api_key: str, secret_key: str):
         self.api_key = api_key
         self.secret_key = secret_key

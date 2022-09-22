@@ -204,14 +204,13 @@ class CoinhubExchange(ExchangePyBase):
         symbol = await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair)
         api_params = {
             "amount": amount_str,
-            "client_id": CONSTANTS.API_CLIENT_ID,
             "market": symbol,
             **({'price': price_str} if order_type == OrderType.LIMIT or order_type == OrderType.LIMIT_MAKER is not None else {}),
             "side": side
         }
-        self.logger().debug(f"Api Params: {api_params}")
+        self.logger().info(f"Create order request payload: {api_params}")
         order_resp = await self._api_post(path_url=CONSTANTS.CREATE_ORDER_PATH_URL, data=api_params, is_auth_required=True)
-        self.logger().debug(f"Api Resp: {order_resp}")
+        self.logger().info(f"Create order request response: {order_resp}")
         order_result = order_resp["data"]
         o_id = str(order_result["id"])
         transact_time = order_result["ctime"] * 1e-3
@@ -268,6 +267,7 @@ class CoinhubExchange(ExchangePyBase):
         }
         """
         trading_pair_rules = exchange_info_dict.get("data", [])
+        self.logger().info(f"Fetched trading rules: {len(trading_pair_rules)} pairs")
         retval = []
         for rule in filter(coinhub_utils.is_exchange_information_valid, trading_pair_rules):
             try:
@@ -308,7 +308,7 @@ class CoinhubExchange(ExchangePyBase):
                 print(e)
                 self.logger().network("Unexpected error while polling updates.",
                                       exc_info=True,
-                                      app_warning_msg="Could not fetch updates from Coinhub-Sandbox. "
+                                      app_warning_msg="Could not fetch updates from Coinhub. "
                                                       "Check API key and network connection.")
                 await asyncio.sleep(5.0)
 

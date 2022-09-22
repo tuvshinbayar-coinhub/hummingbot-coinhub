@@ -2,11 +2,11 @@ import asyncio
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from hummingbot.connector.exchange.coinhub_sandbox import (
-    coinhub_sandbox_constants as CONSTANTS,
-    coinhub_sandbox_web_utils as web_utils,
+from hummingbot.connector.exchange.coinhub_test import (
+    coinhub_test_constants as CONSTANTS,
+    coinhub_test_web_utils as web_utils,
 )
-from hummingbot.connector.exchange.coinhub_sandbox.coinhub_sandbox_order_book import CoinhubSandboxOrderBook
+from hummingbot.connector.exchange.coinhub_test.coinhub_test_order_book import CoinhubTestOrderBook
 from hummingbot.core.data_type.order_book_message import OrderBookMessage
 from hummingbot.core.data_type.order_book_tracker_data_source import OrderBookTrackerDataSource
 from hummingbot.core.web_assistant.connections.data_types import RESTMethod, WSJSONRequest
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from hummingbot.connector.exchange.coinhub.coinhub_exchange import CoinhubExchange
 
 
-class CoinhubSandboxAPIOrderBookDataSource(OrderBookTrackerDataSource):
+class CoinhubTestAPIOrderBookDataSource(OrderBookTrackerDataSource):
     HEARTBEAT_TIME_INTERVAL = 30.0
     TRADE_STREAM_ID = 1
     DIFF_STREAM_ID = 2
@@ -113,14 +113,14 @@ class CoinhubSandboxAPIOrderBookDataSource(OrderBookTrackerDataSource):
 
     async def _connected_websocket_assistant(self) -> WSAssistant:
         ws: WSAssistant = await self._api_factory.get_ws_assistant()
-        await ws.connect(ws_url=CONSTANTS.WSS_URL.format(endpoint=CONSTANTS.PUBLIC_API_ENDPOINT, domain=self._domain),
+        await ws.connect(ws_url=CONSTANTS.WSS_URL.format(endpoint=CONSTANTS.DEFAULT_ENDPOINT, domain=self._domain),
                          ping_timeout=CONSTANTS.WS_HEARTBEAT_TIME_INTERVAL)
         return ws
 
     async def _order_book_snapshot(self, trading_pair: str) -> OrderBookMessage:
         snapshot: Dict[str, Any] = await self._request_order_book_snapshot(trading_pair)
         snapshot_timestamp: float = time.time()
-        snapshot_msg: OrderBookMessage = CoinhubSandboxOrderBook.snapshot_message_from_exchange(
+        snapshot_msg: OrderBookMessage = CoinhubTestOrderBook.snapshot_message_from_exchange(
             snapshot,
             snapshot_timestamp,
             metadata={"trading_pair": trading_pair}
@@ -131,7 +131,7 @@ class CoinhubSandboxAPIOrderBookDataSource(OrderBookTrackerDataSource):
         if "result" not in raw_message:
             trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(symbol=raw_message["params"][0])
             for trade in raw_message["params"][1]:
-                trade_message = CoinhubSandboxOrderBook.trade_message_from_exchange(
+                trade_message = CoinhubTestOrderBook.trade_message_from_exchange(
                     trade, {"trading_pair": trading_pair})
                 message_queue.put_nowait(trade_message)
 
@@ -141,7 +141,7 @@ class CoinhubSandboxAPIOrderBookDataSource(OrderBookTrackerDataSource):
             data = raw_message["params"][1]
             symbol = raw_message["params"][2]
             trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(symbol=symbol)
-            order_book_message: OrderBookMessage = CoinhubSandboxOrderBook.diff_message_from_exchange(
+            order_book_message: OrderBookMessage = CoinhubTestOrderBook.diff_message_from_exchange(
                 data, time.time(), {"trading_pair": trading_pair})
             message_queue.put_nowait(order_book_message)
 

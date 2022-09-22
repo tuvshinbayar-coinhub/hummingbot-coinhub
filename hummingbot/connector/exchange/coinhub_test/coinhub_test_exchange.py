@@ -6,18 +6,18 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 from bidict import bidict
 
 from hummingbot.connector.constants import s_decimal_NaN
-from hummingbot.connector.exchange.coinhub_sandbox import (
-    coinhub_sandbox_constants as CONSTANTS,
-    coinhub_sandbox_utils,
-    coinhub_sandbox_web_utils as web_utils,
+from hummingbot.connector.exchange.coinhub_test import (
+    coinhub_test_constants as CONSTANTS,
+    coinhub_test_utils,
+    coinhub_test_web_utils as web_utils,
 )
-from hummingbot.connector.exchange.coinhub_sandbox.coinhub_sandbox_api_order_book_data_source import (
-    CoinhubSandboxAPIOrderBookDataSource,
+from hummingbot.connector.exchange.coinhub_test.coinhub_test_api_order_book_data_source import (
+    CoinhubTestAPIOrderBookDataSource,
 )
-from hummingbot.connector.exchange.coinhub_sandbox.coinhub_sandbox_api_user_stream_data_source import (
-    CoinhubSandboxAPIUserStreamDataSource,
+from hummingbot.connector.exchange.coinhub_test.coinhub_test_api_user_stream_data_source import (
+    CoinhubTestAPIUserStreamDataSource,
 )
-from hummingbot.connector.exchange.coinhub_sandbox.coinhub_sandbox_auth import CoinhubSandboxAuth
+from hummingbot.connector.exchange.coinhub_test.coinhub_test_auth import CoinhubTestAuth
 from hummingbot.connector.exchange_py_base import ExchangePyBase
 from hummingbot.connector.trading_rule import TradingRule
 from hummingbot.connector.utils import TradeFillOrderDetails, combine_to_hb_trading_pair
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 s_logger = None
 
 
-class CoinhubSandboxExchange(ExchangePyBase):
+class CoinhubTestExchange(ExchangePyBase):
     UPDATE_ORDER_STATUS_MIN_INTERVAL = 10.0
 
     web_utils = web_utils
@@ -70,11 +70,11 @@ class CoinhubSandboxExchange(ExchangePyBase):
 
     @property
     def authenticator(self):
-        return CoinhubSandboxAuth(api_key=self.api_key, secret_key=self.secret_key)
+        return CoinhubTestAuth(api_key=self.api_key, secret_key=self.secret_key)
 
     @property
     def name(self) -> str:
-        return "coinhub_sandbox"
+        return "coinhub_test"
 
     @property
     def rate_limits_rules(self):
@@ -163,7 +163,7 @@ class CoinhubSandboxExchange(ExchangePyBase):
         )
 
     def _create_order_book_data_source(self) -> OrderBookTrackerDataSource:
-        return CoinhubSandboxAPIOrderBookDataSource(
+        return CoinhubTestAPIOrderBookDataSource(
             trading_pairs=self._trading_pairs,
             connector=self,
             domain=self.domain,
@@ -171,7 +171,7 @@ class CoinhubSandboxExchange(ExchangePyBase):
         )
 
     def _create_user_stream_data_source(self) -> UserStreamTrackerDataSource:
-        return CoinhubSandboxAPIUserStreamDataSource(
+        return CoinhubTestAPIUserStreamDataSource(
             auth=self._auth,
             trading_pairs=self._trading_pairs,
             connector=self,
@@ -271,9 +271,8 @@ class CoinhubSandboxExchange(ExchangePyBase):
         }
         """
         trading_pair_rules = exchange_info_dict.get("data", [])
-        self.logger().info(f"Trading rules: {trading_pair_rules}")
         retval = []
-        for rule in filter(coinhub_sandbox_utils.is_exchange_information_valid, trading_pair_rules):
+        for rule in filter(coinhub_test_utils.is_exchange_information_valid, trading_pair_rules):
             try:
                 trading_pair = await self.trading_pair_associated_to_exchange_symbol(symbol=rule.get("market"))
 
@@ -589,7 +588,7 @@ class CoinhubSandboxExchange(ExchangePyBase):
 
     def _initialize_trading_pair_symbols_from_exchange_info(self, exchange_info: Dict[str, Any]):
         mapping = bidict()
-        for symbol_data in filter(coinhub_sandbox_utils.is_exchange_information_valid, exchange_info.get("data", [])):
+        for symbol_data in filter(coinhub_test_utils.is_exchange_information_valid, exchange_info.get("data", [])):
             mapping[symbol_data["market"]] = combine_to_hb_trading_pair(
                 base=symbol_data["stock"], quote=symbol_data["money"]
             )

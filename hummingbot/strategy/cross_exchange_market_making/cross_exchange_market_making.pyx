@@ -86,6 +86,7 @@ cdef class CrossExchangeMarketMakingStrategy(StrategyBase):
         self._maker_markets = set([market_pair.maker.market for market_pair in market_pairs])
         self._taker_markets = set([market_pair.taker.market for market_pair in market_pairs])
         self._all_markets_ready = False
+        self._rate_oracle_ready = False
 
         self._anti_hysteresis_timers = {}
         self._order_fill_buy_events = {}
@@ -316,13 +317,21 @@ cdef class CrossExchangeMarketMakingStrategy(StrategyBase):
             # Perform clock tick with the market pair tracker.
             self._market_pair_tracker.c_tick(timestamp)
 
-            if not self._all_markets_ready:
+            if not self._all_markets_ready or not self._rate_oracle_ready:
                 self._all_markets_ready = all([market.ready for market in self._sb_markets])
-                if self._config_map.conversion_rate_mode.hb_config.__class__ == OracleConversionRateMode and not RateOracle.get_instance().ready:
+                self._rate_oracle_ready = RateOracle.get_instance().ready
+                # If conversation rate mode is not oracle rate mode, it should not check rate oracle
+                if not self._config_map.conversion_rate_mode.hb_config.__class__ == OracleConversionRateMode:
+                    self._rate_oracle_ready = True
+                if not self._rate_oracle_ready:
                     # Oracle rate not ready. Don't do anything.
-                    if should_report_warnings:
-                        self.logger().warning(f"Rate oracle is not ready. No market making trades are permitted.")
+                    self.logger().warning(f"Rate oracle is not ready. No market making trades are permitted.")
                     return
+                else:
+                    # Oracle rate is ready, ok to proceed.
+                    if self.OPTION_LOG_STATUS_REPORT:
+                        self.logger().info(f"Rate oracle is ready.")
+                        self.log_conversion_rates()
                 if not self._all_markets_ready:
                     # Markets not ready yet. Don't do anything.
                     if should_report_warnings:
@@ -796,7 +805,7 @@ cdef class CrossExchangeMarketMakingStrategy(StrategyBase):
         if is_bid:
 
             maker_balance_in_quote = maker_market.c_get_available_balance(market_pair.maker.quote_asset)
-
+            self.logger().info(f"Maker balance (quote asset): {maker_balance_in_quote}")
             taker_balance = taker_market.c_get_available_balance(market_pair.taker.base_asset) * \
                 self.order_size_taker_balance_factor
 
@@ -811,12 +820,15 @@ cdef class CrossExchangeMarketMakingStrategy(StrategyBase):
             maker_balance = maker_balance_in_quote / taker_price
             order_amount = min(maker_balance, taker_balance, user_order)
 
+            self.logger().info(f"Taker price: {taker_price}")
+            self.logger().info(f"Order amount: {order_amount}")
+
             return maker_market.c_quantize_order_amount(market_pair.maker.trading_pair, Decimal(order_amount))
 
         else:
 
             maker_balance = maker_market.c_get_available_balance(market_pair.maker.base_asset)
-
+            self.logger().info(f"Maker balance (quote asset): {maker_balance}")
             taker_balance_in_quote = taker_market.c_get_available_balance(market_pair.taker.quote_asset) * \
                 self.order_size_taker_balance_factor
 
@@ -1181,6 +1193,7 @@ cdef class CrossExchangeMarketMakingStrategy(StrategyBase):
             if bid_size > s_decimal_zero:
 
                 bid_price = self.c_get_market_making_price(market_pair, True, bid_size)
+                self.logger().info(f"Bid price: {bid_price}")
 
                 if not Decimal.is_nan(bid_price):
                     effective_hedging_price = self.c_calculate_effective_hedging_price(

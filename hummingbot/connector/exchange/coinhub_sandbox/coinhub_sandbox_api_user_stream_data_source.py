@@ -2,7 +2,7 @@ import asyncio
 from typing import TYPE_CHECKING, List, Optional
 
 from hummingbot.connector.exchange.coinhub_sandbox import coinhub_sandbox_constants as CONSTANTS
-from hummingbot.connector.exchange.coinhub_sandbox.coinhub_sandbox_auth import CoinhubAuth
+from hummingbot.connector.exchange.coinhub_sandbox.coinhub_sandbox_auth import CoinhubSandboxAuth
 from hummingbot.core.data_type.user_stream_tracker_data_source import UserStreamTrackerDataSource
 from hummingbot.core.web_assistant.connections.data_types import WSJSONRequest
 from hummingbot.core.web_assistant.web_assistants_factory import WebAssistantsFactory
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from hummingbot.connector.exchange.coinhub_sandbox.coinhub_sandbox_exchange import CoinhubExchange
 
 
-class CoinhubAPIUserStreamDataSource(UserStreamTrackerDataSource):
+class CoinhubSandboxAPIUserStreamDataSource(UserStreamTrackerDataSource):
 
     LISTEN_KEY_KEEP_ALIVE_INTERVAL = 1800  # Recommended to Ping/Update listen key to keep connection alive
     HEARTBEAT_TIME_INTERVAL = 30.0
@@ -22,14 +22,14 @@ class CoinhubAPIUserStreamDataSource(UserStreamTrackerDataSource):
 
     def __init__(
         self,
-        auth: CoinhubAuth,
+        auth: CoinhubSandboxAuth,
         trading_pairs: List[str],
         connector: "CoinhubExchange",
         api_factory: WebAssistantsFactory,
         domain: str = CONSTANTS.DEFAULT_DOMAIN,
     ):
         super().__init__()
-        self._auth: CoinhubAuth = auth
+        self._auth: CoinhubSandboxAuth = auth
         self._current_listen_key = None
         self._domain = domain
         self._api_factory = api_factory
@@ -44,7 +44,7 @@ class CoinhubAPIUserStreamDataSource(UserStreamTrackerDataSource):
         """
 
         ws: WSAssistant = await self._get_ws_assistant()
-        await ws.connect(ws_url=CONSTANTS.WSS_URL.format(endpoint=CONSTANTS.PRIVATE_EXCHANGE_ENDPOINT, domain=self._domain),
+        await ws.connect(ws_url=CONSTANTS.WSS_URL.format(endpoint=CONSTANTS.PUBLIC_API_ENDPOINT, domain=self._domain),
                          ping_timeout=CONSTANTS.WS_HEARTBEAT_TIME_INTERVAL)
         await ws.send(WSJSONRequest({}, is_auth_required=True))
         await self._sleep(2.0)
