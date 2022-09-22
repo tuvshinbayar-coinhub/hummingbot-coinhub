@@ -78,7 +78,7 @@ class CoinhubAPIOrderBookDataSource(OrderBookTrackerDataSource):
             }
             subscribe_trade_request: WSJSONRequest = WSJSONRequest(payload=payload)
 
-            traidng_rules = self._connector.trading_rules
+            trading_rules = self._connector.trading_rules
 
             depth_params = []
             for i in range(0, len(self._trading_pairs) * 3, 3):
@@ -86,7 +86,7 @@ class CoinhubAPIOrderBookDataSource(OrderBookTrackerDataSource):
                 trading_pair = self._trading_pairs[index]
                 depth_params.append(symbols[index])
                 depth_params.append(50)
-                depth_params.append(str(traidng_rules[trading_pair].min_price_increment))
+                depth_params.append(str(trading_rules[trading_pair].min_price_increment))
 
             payload = {
                 "id": 2,
