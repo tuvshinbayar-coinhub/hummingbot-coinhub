@@ -23,7 +23,6 @@ from hummingbot.connector.connector_metrics_collector import (
 )
 from hummingbot.connector.exchange.ascend_ex.ascend_ex_utils import AscendExConfigMap
 from hummingbot.connector.exchange.binance.binance_utils import BinanceConfigMap
-from hummingbot.connector.exchange.coinhub.coinhub_utils import CoinhubConfigMap
 from hummingbot.connector.exchange.gate_io.gate_io_utils import GateIOConfigMap
 from hummingbot.connector.exchange.kucoin.kucoin_utils import KuCoinConfigMap
 from hummingbot.connector.exchange_base import ExchangeBase
@@ -151,7 +150,6 @@ class PaperTradeConfigMap(BaseClientModel):
             KuCoinConfigMap.Config.title,
             AscendExConfigMap.Config.title,
             GateIOConfigMap.Config.title,
-            CoinhubConfigMap.Config.title,
         ],
     )
     paper_trade_account_balance: Dict[str, float] = Field(

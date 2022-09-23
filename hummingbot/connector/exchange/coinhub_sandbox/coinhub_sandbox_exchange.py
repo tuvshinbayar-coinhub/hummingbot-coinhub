@@ -1,5 +1,5 @@
 import asyncio
-import time
+from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
@@ -27,7 +27,6 @@ from hummingbot.core.data_type.order_book_tracker_data_source import OrderBookTr
 from hummingbot.core.data_type.trade_fee import DeductedFromReturnsTradeFee, TokenAmount, TradeFeeBase
 from hummingbot.core.data_type.user_stream_tracker_data_source import UserStreamTrackerDataSource
 from hummingbot.core.event.events import MarketEvent, OrderFilledEvent
-from hummingbot.core.network_iterator import NetworkStatus
 from hummingbot.core.utils.async_utils import safe_gather
 from hummingbot.core.web_assistant.connections.data_types import RESTMethod
 from hummingbot.core.web_assistant.web_assistants_factory import WebAssistantsFactory
@@ -50,11 +49,9 @@ class CoinhubSandboxExchange(ExchangePyBase):
         coinhub_api_secret: str,
         trading_pairs: Optional[List[str]] = None,
         trading_required: bool = True,
-        domain: str = CONSTANTS.DEFAULT_DOMAIN,
     ):
         self.api_key = coinhub_api_key
         self.secret_key = coinhub_api_secret
-        self._domain = domain
         self._trading_required = trading_required
         self._trading_pairs = trading_pairs
         self._last_trades_poll_coinhub_timestamp = 1.0
@@ -82,7 +79,7 @@ class CoinhubSandboxExchange(ExchangePyBase):
 
     @property
     def domain(self):
-        return self._domain
+        return CONSTANTS.DEFAULT_DOMAIN
 
     @property
     def client_order_id_max_length(self):
@@ -116,6 +113,13 @@ class CoinhubSandboxExchange(ExchangePyBase):
     def is_trading_required(self) -> bool:
         return self._trading_required
 
+    def supported_order_types(self):
+        return [OrderType.LIMIT, OrderType.LIMIT_MAKER, OrderType.MARKET]
+
+    def _is_request_exception_related_to_time_synchronizer(self, request_exception: Exception) -> bool:
+        # FTX API does not include an endpoint to get the server time, thus the TimeSynchronizer is not used
+        return False
+
     async def _api_request(self,
                            path_url,
                            endpoint: str = CONSTANTS.DEFAULT_ENDPOINT,
@@ -128,9 +132,9 @@ class CoinhubSandboxExchange(ExchangePyBase):
 
         rest_assistant = await self._web_assistants_factory.get_rest_assistant()
         if is_auth_required:
-            url = self.web_utils.private_rest_url(path_url, endpoint=endpoint, domain=self.domain)
+            url = self.web_utils.private_rest_url(path_url, endpoint=endpoint)
         else:
-            url = self.web_utils.public_rest_url(path_url, endpoint=endpoint, domain=self.domain)
+            url = self.web_utils.public_rest_url(path_url, endpoint=endpoint)
 
         return await rest_assistant.execute_request(
             url=url,
@@ -142,31 +146,16 @@ class CoinhubSandboxExchange(ExchangePyBase):
             throttler_limit_id=limit_id if limit_id else path_url,
         )
 
-    async def check_network(self) -> NetworkStatus:
-        """
-        Checks connectivity with the exchange using the API
-        """
-        try:
-            await self._api_get(path_url=self.check_network_request_path, endpoint=CONSTANTS.PUBLIC_API_ENDPOINT)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            return NetworkStatus.NOT_CONNECTED
-        return NetworkStatus.CONNECTED
-
-    def supported_order_types(self):
-        return [OrderType.LIMIT, OrderType.LIMIT_MAKER, OrderType.MARKET]
-
     def _create_web_assistants_factory(self) -> WebAssistantsFactory:
         return web_utils.build_api_factory(
-            throttler=self._throttler, time_synchronizer=self._time_synchronizer, domain=self._domain, auth=self._auth
+            throttler=self._throttler,
+            auth=self._auth
         )
 
     def _create_order_book_data_source(self) -> OrderBookTrackerDataSource:
         return CoinhubSandboxAPIOrderBookDataSource(
             trading_pairs=self._trading_pairs,
             connector=self,
-            domain=self.domain,
             api_factory=self._web_assistants_factory,
         )
 
@@ -176,7 +165,6 @@ class CoinhubSandboxExchange(ExchangePyBase):
             trading_pairs=self._trading_pairs,
             connector=self,
             api_factory=self._web_assistants_factory,
-            domain=self.domain,
         )
 
     def _get_fee(
@@ -216,9 +204,8 @@ class CoinhubSandboxExchange(ExchangePyBase):
         order_resp = await self._api_post(path_url=CONSTANTS.CREATE_ORDER_PATH_URL, data=api_params, is_auth_required=True)
         self.logger().debug(f"Api Resp: {order_resp}")
         order_result = order_resp["data"]
-        o_id = str(order_result["id"])
-        transact_time = order_result["ctime"] * 1e-3
-        return (o_id, transact_time)
+        exchange_order_id = str(order_result["id"])
+        return (exchange_order_id, self.current_timestamp)
 
     async def _place_cancel(self, order_id: str, tracked_order: InFlightOrder):
         symbol = await self.exchange_symbol_associated_to_pair(trading_pair=tracked_order.trading_pair)
@@ -228,15 +215,14 @@ class CoinhubSandboxExchange(ExchangePyBase):
             "market": symbol,
             "order_id": tracked_order.exchange_order_id
         }
-        cancel_resp = await self._api_post(
+        cancel_result = await self._api_post(
             path_url=CONSTANTS.ORDER_CANCEL_PATH_URL, data=api_params, is_auth_required=True
         )
-        cancel_result = cancel_resp["data"]
-        if not cancel_resp["data"] and cancel_resp["code"] == 10:
-            return True
-        if cancel_result and cancel_result["status"] == "done":
-            return True
-        return False
+        if not cancel_result.get("data", False) and not cancel_result.get("code", False):
+            self.logger().warning(
+                f"Failed to cancel order {order_id} ({cancel_result})")
+
+        return cancel_result["data"]["status"] == "done" or cancel_result.get("code", False) == 10
 
     async def _format_trading_rules(self, exchange_info_dict: Dict[str, Any]) -> List[TradingRule]:
         """
@@ -280,41 +266,23 @@ class CoinhubSandboxExchange(ExchangePyBase):
                 min_order_size = Decimal(rule.get("minAmount"))
                 min_amount_inc = Decimal(f"1e-{rule['stockPrec']}")
                 min_price_inc = Decimal(f"1e-{rule['moneyPrec']}")
-
+                min_order_value = min_order_size * min_price_inc
+                min_quote_amount_increment = min_price_inc * min_amount_inc
                 retval.append(
                     TradingRule(
                         trading_pair,
                         min_order_size=min_order_size,
                         min_price_increment=min_price_inc,
                         min_base_amount_increment=min_amount_inc,
-                        # min_notional_size=min(min_price_inc * min_order_size, Decimal("0.00000001"))
+                        min_quote_amount_increment=min_quote_amount_increment,
+                        min_order_value=min_order_value,
+                        min_notional_size=min_order_value
                     )
                 )
 
             except Exception:
                 self.logger().exception(f"Error parsing the trading pair rule {rule}. Skipping.")
         return retval
-
-    async def _status_polling_loop(self):
-        while True:
-            try:
-                self._poll_notifier = asyncio.Event()
-                await self._poll_notifier.wait()
-
-                await safe_gather(
-                    self._update_balances(),
-                    self._update_order_status(),
-                )
-                self._last_poll_timestamp = self.current_timestamp
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                print(e)
-                self.logger().network("Unexpected error while polling updates.",
-                                      exc_info=True,
-                                      app_warning_msg="Could not fetch updates from Coinhub-Sandbox. "
-                                                      "Check API key and network connection.")
-                await asyncio.sleep(5.0)
 
     async def _status_polling_loop_fetch_updates(self):
         await self._update_order_fills_from_trades()
@@ -494,80 +462,118 @@ class CoinhubSandboxExchange(ExchangePyBase):
                         )
                         self.logger().info(f"Recreating missing trade in TradeFill: {trade}")
 
-    async def _update_order_status(self):
-        # This is intended to be a backup measure to close straggler orders, in case Binance's user stream events
-        # are not working.
-        # The minimum poll interval for order status is 10 seconds.
-        last_tick = self._last_poll_timestamp / self.UPDATE_ORDER_STATUS_MIN_INTERVAL
-        current_tick = self.current_timestamp / self.UPDATE_ORDER_STATUS_MIN_INTERVAL
+    async def _all_trade_updates_for_order(self, order: InFlightOrder) -> List[TradeUpdate]:
+        trade_updates = []
 
-        tracked_orders: List[InFlightOrder] = list(self.in_flight_orders.values())
-        if current_tick > last_tick and len(tracked_orders) > 0:
+        try:
+            exchange_order_id = int(order.exchange_order_id)
+            trading_pair = await self.exchange_symbol_associated_to_pair(trading_pair=order.trading_pair)
+            all_fills_response = await self._api_get(
+                path_url=CONSTANTS.ORDER_FILLS_URL,
+                params={
+                    "market": trading_pair,
+                    "order_id": int(exchange_order_id)
+                },
+                is_auth_required=True,
+                limit_id=CONSTANTS.ORDER_FILLS_URL)
+            if not all_fills_response.get("data", False):
+                self.logger().error("Unexpected error in all trades updates for order", exc_info=True)
+                return []
+            for trade_fill in all_fills_response["data"]["records"]:
+                trade_update = self._create_trade_update_with_order_fill_data(order_fill_msg=trade_fill, order=order)
+                trade_updates.append(trade_update)
+        except asyncio.TimeoutError:
+            raise IOError(f"Skipped order update with order fills for {order.client_order_id} "
+                          "- waiting for exchange order id.")
 
-            tasks = [
-                self._api_post(
-                    path_url=CONSTANTS.GET_ORDER_PATH_URL,
-                    data={
-                        "market": await self.exchange_symbol_associated_to_pair(trading_pair=o.trading_pair),
-                        "order_id": o.exchange_order_id,
-                    },
-                    is_auth_required=True,
-                )
-                for o in tracked_orders
-            ]
-            self.logger().debug(f"Polling for order status updates of {len(tasks)} orders.")
-            results = await safe_gather(*tasks, return_exceptions=True)
-            for order_update, tracked_order in zip(results, tracked_orders):
-                client_order_id = tracked_order.client_order_id
-                exchange_order_id = tracked_order.exchange_order_id
+        return trade_updates
 
-                # If the order has already been canceled or has failed do nothing
-                if client_order_id not in self.in_flight_orders:
-                    continue
+    def _create_trade_update_with_order_fill_data(self, order_fill_msg: Dict[str, Any], order: InFlightOrder):
+        #  {
+        #     "deal_order_id": 50216,
+        #     "amount": "0.001",
+        #     "deal": "4000",
+        #     "role": 1,
+        #     "price": "4000000",
+        #     "fee": "0.0000025",
+        #     "id": 16941,
+        #     "time": 1663897377.2463641,
+        #     "user": 7
+        # }
 
-                if isinstance(order_update, Exception) or int(order_update["code"]) >= 500:
-                    self.logger().network(
-                        f"Error fetching status update for the order {exchange_order_id}: {order_update}.",
-                        app_warning_msg=f"Failed to fetch status update for the order {exchange_order_id}.",
-                    )
-                    # Wait until the order not found error have repeated a few times before actually treating
-                    # it as failed. See: https://github.com/CoinAlpha/hummingbot/issues/601
-                    await self._order_tracker.process_order_not_found(client_order_id)
+        estimated_fee_token = order.quote_asset
+        if order.trade_type == TradeType.BUY:
+            estimated_fee_token = order.base_asset
+        fee = TradeFeeBase.new_spot_fee(
+            fee_schema=self.trade_fee_schema(),
+            trade_type=order.trade_type,
+            percent_token=estimated_fee_token,
+            flat_fees=[TokenAmount(
+                amount=Decimal(str(order_fill_msg["fee"])),
+                token=estimated_fee_token
+            )]
+        )
+        trade_update = TradeUpdate(
+            trade_id=str(order_fill_msg["deal_order_id"]),
+            client_order_id=order.client_order_id,
+            exchange_order_id=order.exchange_order_id,
+            trading_pair=order.trading_pair,
+            fee=fee,
+            fill_base_amount=Decimal(str(order_fill_msg["amount"])),
+            fill_quote_amount=Decimal(str(order_fill_msg["amount"])) * Decimal(str(order_fill_msg["price"])),
+            fill_price=Decimal(str(order_fill_msg["price"])),
+            fill_timestamp=datetime.fromisoformat(order_fill_msg["time"]).timestamp(),
+        )
+        return trade_update
 
-                else:
-                    # Update order execution status
-                    update_timestamp = time.time()
-                    if "data" in order_update:
-                        if "data" in order_update["data"] and order_update["data"]["code"] == 501:
-                            new_state = OrderState.CANCELED
-                        else:
-                            if "data" in order_update["data"]:
-                                new_state = CONSTANTS.ORDER_STATE[order_update["data"]["data"]["status"]]
-                                if new_state == OrderState.OPEN and Decimal(order_update["data"]["data"]["amount"]) != Decimal(order_update["data"]["data"]["left"]):
-                                    new_state = OrderState.PARTIALLY_FILLED
-                                    if "ftime" in order_update["data"]:
-                                        update_timestamp = order_update["data"]["data"]["ftime"]
-                                    else:
-                                        update_timestamp = order_update["data"]["data"]["mtime"]
-                            else:
-                                new_state = CONSTANTS.ORDER_STATE[order_update["data"]["status"]]
-                                if new_state == OrderState.OPEN and Decimal(order_update["data"]["amount"]) != Decimal(order_update["data"]["left"]):
-                                    new_state = OrderState.PARTIALLY_FILLED
-                                    if "ftime" in order_update["data"]:
-                                        update_timestamp = order_update["data"]["ftime"]
-                                    else:
-                                        update_timestamp = order_update["data"]["mtime"]
-                    else:
-                        new_state = OrderState.FAILED
+    async def _request_order_status(self, tracked_order: InFlightOrder) -> OrderUpdate:
+        updated_order_data = await self._api_post(
+            path_url=CONSTANTS.GET_ORDER_PATH_URL,
+            data={
+                "market": await self.exchange_symbol_associated_to_pair(trading_pair=tracked_order.trading_pair),
+                "order_id": tracked_order.exchange_order_id,
+            },
+            is_auth_required=True
+        )
 
-                    update = OrderUpdate(
-                        client_order_id=client_order_id,
-                        exchange_order_id=exchange_order_id,
-                        trading_pair=tracked_order.trading_pair,
-                        update_timestamp=update_timestamp,
-                        new_state=new_state,
-                    )
-                    self._order_tracker.process_order_update(update)
+        order_update = self._create_order_update_with_order_status_data(
+            order_status_msg=updated_order_data["data"],
+            order=tracked_order)
+
+        return order_update
+
+    def _create_order_update_with_order_status_data(self, order_status_msg: Dict[str, Any], order: InFlightOrder):
+        # {
+        #     "side": 2,
+        #     "amount": "0.01",
+        #     "deal_stock": "0",
+        #     "taker_fee": "0.0025",
+        #     "type": 1,
+        #     "mtime": 1661487579.9604571,
+        #     "client_id": "686042aac1c14927b39c",
+        #     "market": "ETH/MNT",
+        #     "left": "0.01",
+        #     "price": "2200000.01",
+        #     "maker_fee": "0.0025",
+        #     "ctime": 1661487579.9604571,
+        #     "id": 81,
+        #     "deal_fee": "0",
+        #     "user": 7,
+        #     "deal_money": "0",
+        #     "status": "opened"
+        # }
+        state = order.current_state
+        new_state = CONSTANTS.ORDER_STATE[order_status_msg["status"]]
+        if new_state == OrderState.OPEN and Decimal(order_status_msg["amount"]) != Decimal(order_status_msg["left"]):
+            new_state = OrderState.PARTIALLY_FILLED
+        order_update = OrderUpdate(
+            trading_pair=order.trading_pair,
+            update_timestamp=self.current_timestamp,
+            new_state=state,
+            client_order_id=order.client_order_id,
+            exchange_order_id=str(order_status_msg["id"]),
+        )
+        return order_update
 
     async def _update_balances(self):
         local_asset_names = set(self._account_balances.keys())

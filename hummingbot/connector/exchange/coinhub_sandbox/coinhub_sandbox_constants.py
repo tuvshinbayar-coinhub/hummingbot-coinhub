@@ -1,7 +1,7 @@
 from hummingbot.core.api_throttler.data_types import LinkedLimitWeightPair, RateLimit
 from hummingbot.core.data_type.in_flight_order import OrderState
 
-DEFAULT_DOMAIN = "mn"
+DEFAULT_DOMAIN = ""
 
 HBOT_ORDER_ID_PREFIX = "x-XEKWYICX"
 MAX_ORDER_ID_LEN = 32
@@ -14,8 +14,8 @@ PUBLIC_API_ENDPOINT = "sandbox-api"
 DEFAULT_ENDPOINT = PRIVATE_EXCHANGE_ENDPOINT
 
 # Base URL
-REST_URL = "https://{endpoint}.coinhub.{domain}/"
-WSS_URL = "wss://{endpoint}.coinhub.{domain}/ws/"
+REST_URL = "https://{endpoint}.coinhub.mn/"
+WSS_URL = "wss://{endpoint}.coinhub.mn/ws/"
 
 PUBLIC_API_VERSION = "v1"
 PRIVATE_API_VERSION = "v1"
@@ -34,6 +34,7 @@ MY_TRADES_PATH_URL = "/api/order/user_deals"
 CREATE_ORDER_PATH_URL = "/api/order/create"
 ORDER_CANCEL_PATH_URL = "/api/order/cancel"
 GET_ORDER_PATH_URL = "/api/order/detail"
+ORDER_FILLS_URL = "/api/order/order_deals"
 
 COINHUB_USER_STREAM_PATH_URL = "/userDataStream"
 

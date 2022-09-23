@@ -25,13 +25,11 @@ class CoinhubSandboxAPIUserStreamDataSource(UserStreamTrackerDataSource):
         auth: CoinhubSandboxAuth,
         trading_pairs: List[str],
         connector: "CoinhubExchange",
-        api_factory: WebAssistantsFactory,
-        domain: str = CONSTANTS.DEFAULT_DOMAIN,
+        api_factory: WebAssistantsFactory
     ):
         super().__init__()
         self._auth: CoinhubSandboxAuth = auth
         self._current_listen_key = None
-        self._domain = domain
         self._api_factory = api_factory
         self._trading_pairs = trading_pairs
         self._connector = connector
@@ -44,7 +42,7 @@ class CoinhubSandboxAPIUserStreamDataSource(UserStreamTrackerDataSource):
         """
 
         ws: WSAssistant = await self._get_ws_assistant()
-        await ws.connect(ws_url=CONSTANTS.WSS_URL.format(endpoint=CONSTANTS.PUBLIC_API_ENDPOINT, domain=self._domain),
+        await ws.connect(ws_url=CONSTANTS.WSS_URL.format(endpoint=CONSTANTS.PUBLIC_API_ENDPOINT),
                          ping_timeout=CONSTANTS.WS_HEARTBEAT_TIME_INTERVAL)
         await ws.send(WSJSONRequest({}, is_auth_required=True))
         await self._sleep(2.0)

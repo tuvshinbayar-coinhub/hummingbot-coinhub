@@ -29,13 +29,11 @@ class CoinhubSandboxAPIOrderBookDataSource(OrderBookTrackerDataSource):
     def __init__(self,
                  trading_pairs: List[str],
                  connector: 'CoinhubExchange',
-                 api_factory: WebAssistantsFactory,
-                 domain: str = CONSTANTS.DEFAULT_DOMAIN):
+                 api_factory: WebAssistantsFactory):
         super().__init__(trading_pairs)
         self._connector = connector
         self._trade_messages_queue_key = "trade"
         self._diff_messages_queue_key = "order_book_diff"
-        self._domain = domain
         self._api_factory = api_factory
 
     async def get_last_traded_prices(self,
@@ -59,7 +57,7 @@ class CoinhubSandboxAPIOrderBookDataSource(OrderBookTrackerDataSource):
 
         rest_assistant = await self._api_factory.get_rest_assistant()
         data = await rest_assistant.execute_request(
-            url=web_utils.public_rest_url(path_url=CONSTANTS.SNAPSHOT_PATH_URL, endpoint=CONSTANTS.PUBLIC_API_ENDPOINT, domain=self._domain),
+            url=web_utils.public_rest_url(path_url=CONSTANTS.SNAPSHOT_PATH_URL, endpoint=CONSTANTS.PUBLIC_API_ENDPOINT),
             params=params,
             method=RESTMethod.GET,
             throttler_limit_id=CONSTANTS.SNAPSHOT_PATH_URL,
@@ -113,7 +111,7 @@ class CoinhubSandboxAPIOrderBookDataSource(OrderBookTrackerDataSource):
 
     async def _connected_websocket_assistant(self) -> WSAssistant:
         ws: WSAssistant = await self._api_factory.get_ws_assistant()
-        await ws.connect(ws_url=CONSTANTS.WSS_URL.format(endpoint=CONSTANTS.PUBLIC_API_ENDPOINT, domain=self._domain),
+        await ws.connect(ws_url=CONSTANTS.WSS_URL.format(endpoint=CONSTANTS.PUBLIC_API_ENDPOINT),
                          ping_timeout=CONSTANTS.WS_HEARTBEAT_TIME_INTERVAL)
         return ws
 
