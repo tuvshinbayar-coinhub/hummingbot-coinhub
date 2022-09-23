@@ -7,9 +7,9 @@ HBOT_ORDER_ID_PREFIX = "x-XEKWYICX"
 MAX_ORDER_ID_LEN = 32
 
 # Base URL
-PUBLIC_REST_URL = "https://sandbox-api.coinhub.mn/"
-PRIVATE_REST_URL = "https://sandbox-exchange.coinhub.mn/"
-WSS_URL = "wss://sandbox-api.coinhub.mn/ws/"
+PUBLIC_REST_URL = "https://sapi.coinhub.mn/"
+PRIVATE_REST_URL = "https://sapi3.coinhub.mn/"
+WSS_URL = "wss://sapi.coinhub.mn/ws/"
 
 PUBLIC_API_VERSION = "v1"
 PRIVATE_API_VERSION = "v1"
