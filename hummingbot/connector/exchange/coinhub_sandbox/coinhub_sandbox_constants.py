@@ -8,14 +8,10 @@ MAX_ORDER_ID_LEN = 32
 
 API_CLIENT_ID = "686042aac1c14927b39c"
 
-PRIVATE_EXCHANGE_ENDPOINT = "sandbox-exchange"
-PUBLIC_API_ENDPOINT = "sandbox-api"
-
-DEFAULT_ENDPOINT = PRIVATE_EXCHANGE_ENDPOINT
-
 # Base URL
-REST_URL = "https://{endpoint}.coinhub.mn/"
-WSS_URL = "wss://{endpoint}.coinhub.mn/ws/"
+PUBLIC_REST_URL = "https://sandbox-api.coinhub.mn/"
+PRIVATE_REST_URL = "https://sandbox-exchange.coinhub.mn/"
+WSS_URL = "wss://sandbox-api.coinhub.mn/ws/"
 
 PUBLIC_API_VERSION = "v1"
 PRIVATE_API_VERSION = "v1"
@@ -147,6 +143,16 @@ RATE_LIMITS = [
     ),
     RateLimit(
         limit_id=GET_ORDER_PATH_URL,
+        limit=MAX_REQUEST,
+        time_interval=ONE_MINUTE,
+        linked_limits=[
+            LinkedLimitWeightPair(REQUEST_WEIGHT, 1),
+            LinkedLimitWeightPair(ORDERS, 1),
+            LinkedLimitWeightPair(ORDERS_24HR, 1),
+        ],
+    ),
+    RateLimit(
+        limit_id=ORDER_FILLS_URL,
         limit=MAX_REQUEST,
         time_interval=ONE_MINUTE,
         linked_limits=[

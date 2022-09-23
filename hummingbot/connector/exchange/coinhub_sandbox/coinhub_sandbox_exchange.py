@@ -120,32 +120,6 @@ class CoinhubSandboxExchange(ExchangePyBase):
         # FTX API does not include an endpoint to get the server time, thus the TimeSynchronizer is not used
         return False
 
-    async def _api_request(self,
-                           path_url,
-                           endpoint: str = CONSTANTS.DEFAULT_ENDPOINT,
-                           method: RESTMethod = RESTMethod.GET,
-                           params: Optional[Dict[str, Any]] = None,
-                           data: Optional[Dict[str, Any]] = None,
-                           is_auth_required: bool = False,
-                           return_err: bool = False,
-                           limit_id: Optional[str] = None) -> Dict[str, Any]:
-
-        rest_assistant = await self._web_assistants_factory.get_rest_assistant()
-        if is_auth_required:
-            url = self.web_utils.private_rest_url(path_url, endpoint=endpoint)
-        else:
-            url = self.web_utils.public_rest_url(path_url, endpoint=endpoint)
-
-        return await rest_assistant.execute_request(
-            url=url,
-            params=params,
-            data=data,
-            method=method,
-            is_auth_required=is_auth_required,
-            return_err=return_err,
-            throttler_limit_id=limit_id if limit_id else path_url,
-        )
-
     def _create_web_assistants_factory(self) -> WebAssistantsFactory:
         return web_utils.build_api_factory(
             throttler=self._throttler,
@@ -188,6 +162,7 @@ class CoinhubSandboxExchange(ExchangePyBase):
         trade_type: TradeType,
         order_type: OrderType,
         price: Decimal,
+        **kwargs
     ) -> Tuple[str, float]:
         order_result = None
         amount_str = f"{amount:f}"
@@ -257,7 +232,6 @@ class CoinhubSandboxExchange(ExchangePyBase):
         }
         """
         trading_pair_rules = exchange_info_dict.get("data", [])
-        self.logger().info(f"Trading rules: {trading_pair_rules}")
         retval = []
         for rule in filter(coinhub_sandbox_utils.is_exchange_information_valid, trading_pair_rules):
             try:
@@ -285,7 +259,7 @@ class CoinhubSandboxExchange(ExchangePyBase):
         return retval
 
     async def _status_polling_loop_fetch_updates(self):
-        await self._update_order_fills_from_trades()
+        # await self._update_order_fills_from_trades()
         await super()._status_polling_loop_fetch_updates()
 
     async def _update_trading_fees(self):
@@ -396,7 +370,11 @@ class CoinhubSandboxExchange(ExchangePyBase):
             tasks = []
             trading_pairs = self.trading_pairs
             for trading_pair in trading_pairs:
-                params = {"market": await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair), "limit": 100, "offset": 0}
+                params = {
+                    "limit": 100,
+                    "market": await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair),
+                    "offset": 0
+                }
                 # if self._last_poll_timestamp > 0:
                 #     params["startTime"] = query_time
                 tasks.append(self._api_post(path_url=CONSTANTS.MY_TRADES_PATH_URL, data=params, is_auth_required=True))
@@ -447,7 +425,7 @@ class CoinhubSandboxExchange(ExchangePyBase):
                         self.trigger_event(
                             MarketEvent.OrderFilled,
                             OrderFilledEvent(
-                                timestamp=float(trade["time"]) * 1e-3,
+                                timestamp=self.current_timestamp,
                                 order_id=self._exchange_order_ids.get(str(trade["id"]), None),
                                 trading_pair=trading_pair,
                                 trade_type=TradeType.BUY if trade["side"] == 2 else TradeType.SELL,
@@ -468,9 +446,9 @@ class CoinhubSandboxExchange(ExchangePyBase):
         try:
             exchange_order_id = int(order.exchange_order_id)
             trading_pair = await self.exchange_symbol_associated_to_pair(trading_pair=order.trading_pair)
-            all_fills_response = await self._api_get(
+            all_fills_response = await self._api_post(
                 path_url=CONSTANTS.ORDER_FILLS_URL,
-                params={
+                data={
                     "market": trading_pair,
                     "order_id": int(exchange_order_id)
                 },

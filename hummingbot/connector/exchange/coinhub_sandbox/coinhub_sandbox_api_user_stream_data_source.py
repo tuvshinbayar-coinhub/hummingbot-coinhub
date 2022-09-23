@@ -42,7 +42,7 @@ class CoinhubSandboxAPIUserStreamDataSource(UserStreamTrackerDataSource):
         """
 
         ws: WSAssistant = await self._get_ws_assistant()
-        await ws.connect(ws_url=CONSTANTS.WSS_URL.format(endpoint=CONSTANTS.PUBLIC_API_ENDPOINT),
+        await ws.connect(ws_url=CONSTANTS.WSS_URL,
                          ping_timeout=CONSTANTS.WS_HEARTBEAT_TIME_INTERVAL)
         await ws.send(WSJSONRequest({}, is_auth_required=True))
         await self._sleep(2.0)
