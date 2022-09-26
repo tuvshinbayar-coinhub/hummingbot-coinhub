@@ -164,6 +164,8 @@ class PaperTradeConfigMap(BaseClientModel):
             "USDC": 1000,
             "DAI": 1000,
             "MNT": 5000000000,
+            "SHIB": 1000000000000,
+            "IHC": 100000000,
         },
         client_data=ClientFieldData(
             prompt=lambda cm: (

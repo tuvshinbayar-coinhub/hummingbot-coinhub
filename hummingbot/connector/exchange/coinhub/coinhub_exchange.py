@@ -1,5 +1,4 @@
 import asyncio
-from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
@@ -171,9 +170,9 @@ class CoinhubExchange(ExchangePyBase):
             **({'price': price_str} if order_type == OrderType.LIMIT or order_type == OrderType.LIMIT_MAKER is not None else {}),
             "side": side
         }
-        self.logger().debug(f"Api Params: {api_params}")
+        self.logger().info(f"Api Params: {api_params}")
         order_resp = await self._api_post(path_url=CONSTANTS.CREATE_ORDER_PATH_URL, data=api_params, is_auth_required=True)
-        self.logger().debug(f"Api Resp: {order_resp}")
+        self.logger().info(f"Api Resp: {order_resp}")
         order_result = order_resp["data"]
         exchange_order_id = str(order_result["id"])
         return (exchange_order_id, self.current_timestamp)
@@ -193,7 +192,9 @@ class CoinhubExchange(ExchangePyBase):
             self.logger().warning(
                 f"Failed to cancel order {order_id} ({cancel_result})")
 
-        return cancel_result["data"]["status"] == "done" or cancel_result.get("code", False) == 10
+        self.logger().info(f"Cancel request response: {cancel_result}")
+
+        return (cancel_result["data"] is not None and cancel_result["data"]["status"] == "done") or cancel_result.get("code", False) == 10
 
     async def _format_trading_rules(self, exchange_info_dict: Dict[str, Any]) -> List[TradingRule]:
         """
@@ -496,7 +497,7 @@ class CoinhubExchange(ExchangePyBase):
             fill_base_amount=Decimal(str(order_fill_msg["amount"])),
             fill_quote_amount=Decimal(str(order_fill_msg["amount"])) * Decimal(str(order_fill_msg["price"])),
             fill_price=Decimal(str(order_fill_msg["price"])),
-            fill_timestamp=datetime.fromisoformat(order_fill_msg["time"]).timestamp(),
+            fill_timestamp=order_fill_msg["time"],
         )
         return trade_update
 
