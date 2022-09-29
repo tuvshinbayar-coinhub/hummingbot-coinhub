@@ -119,3 +119,7 @@ To have your pull request reviewed by the community, submit a [Pull Request Prop
 - **Data collection**: read important information regarding [Hummingbot Data Collection](./DATA_COLLECTION.md).
 
 docker build . -t hummingbot-coinhub-sandbox --platform=linux/amd64
+
+docker tag hummingbot:latest giva9712/hummingbot:latest
+
+docker push giva9712/hummingbot:latest

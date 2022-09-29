@@ -78,26 +78,27 @@ class CoinhubSandboxAPIOrderBookDataSource(OrderBookTrackerDataSource):
                 "params": symbols
             }
             subscribe_trade_request: WSJSONRequest = WSJSONRequest(payload=payload)
-
-            traidng_rules = self._connector.trading_rules
-
-            depth_params = []
-            for i in range(0, len(self._trading_pairs) * 3, 3):
-                index = int(i / 3)
-                trading_pair = self._trading_pairs[index]
-                depth_params.append(symbols[index])
-                depth_params.append(50)
-                depth_params.append(str(traidng_rules[trading_pair].min_price_increment))
-
-            payload = {
-                "id": 2,
-                "method": CONSTANTS.DIFF_EVENT_TYPE,
-                "params": depth_params
-            }
-            subscribe_orderbook_request: WSJSONRequest = WSJSONRequest(payload=payload)
-
             await ws.send(subscribe_trade_request)
-            await ws.send(subscribe_orderbook_request)
+
+            trading_rules = self._connector.trading_rules
+            if trading_rules:
+                depth_params = []
+                for index, trading_pair in enumerate(self._trading_pairs):
+                    if trading_pair not in trading_rules:
+                        self.logger().warn(f"Trading rules: {trading_rules}")
+                        raise Exception(f"{trading_pair} trading rule not found")
+                    depth_params.append(symbols[index])
+                    depth_params.append(50)
+                    depth_params.append(str(trading_rules[trading_pair].min_price_increment))
+                if depth_params:
+                    payload = {
+                        "id": 2,
+                        "method": CONSTANTS.DIFF_EVENT_TYPE,
+                        "params": depth_params
+                    }
+                    self.logger().info(payload)
+                    subscribe_orderbook_request: WSJSONRequest = WSJSONRequest(payload=payload)
+                    await ws.send(subscribe_orderbook_request)
 
             self.logger().info("Subscribed to public order book and trade channels...")
         except asyncio.CancelledError:
