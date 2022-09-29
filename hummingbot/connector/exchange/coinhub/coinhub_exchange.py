@@ -1,4 +1,5 @@
 import asyncio
+import math
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
@@ -233,24 +234,20 @@ class CoinhubExchange(ExchangePyBase):
         for rule in filter(coinhub_utils.is_exchange_information_valid, trading_pair_rules):
             try:
                 trading_pair = await self.trading_pair_associated_to_exchange_symbol(symbol=rule.get("market"))
+                min_order_size = Decimal(f"{rule.get('minAmount')}")
 
-                min_order_size = Decimal(rule.get("minAmount"))
-                min_amount_inc = Decimal(f"1e-{rule['stockPrec']}")
-                min_price_inc = Decimal(f"1e-{rule['moneyPrec']}")
-                min_order_value = min_order_size * min_price_inc
-                min_quote_amount_increment = min_price_inc * min_amount_inc
+                price_step = Decimal("1") / Decimal(str(math.pow(10, rule['moneyPrec'])))
+                min_base_amount_increment = Decimal("1") / Decimal(str(math.pow(10, rule['stockPrec'])))
+                min_notional_size = rule.get("minNotionalSize", price_step)
                 retval.append(
                     TradingRule(
                         trading_pair,
                         min_order_size=min_order_size,
-                        min_price_increment=min_price_inc,
-                        min_base_amount_increment=min_amount_inc,
-                        min_quote_amount_increment=min_quote_amount_increment,
-                        min_order_value=min_order_value,
-                        min_notional_size=min_order_value
+                        min_price_increment=price_step,
+                        min_base_amount_increment=min_base_amount_increment,
+                        min_notional_size=min_notional_size
                     )
                 )
-
             except Exception:
                 self.logger().exception(f"Error parsing the trading pair rule {rule}. Skipping.")
         return retval

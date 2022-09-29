@@ -198,7 +198,7 @@ class CoinhubSandboxExchange(ExchangePyBase):
             self.logger().warning(
                 f"Failed to cancel order {order_id} ({cancel_result})")
 
-        return cancel_result["data"]["status"] == "done" or cancel_result.get("code", False) == 10
+        return (cancel_result["data"] is not None and cancel_result["data"]["status"] == "done") or cancel_result.get("code", False) == 10
 
     async def _format_trading_rules(self, exchange_info_dict: Dict[str, Any]) -> List[TradingRule]:
         """
