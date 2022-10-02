@@ -15,9 +15,9 @@ RATE_LIMITS = [RateLimit(REST_CALL_RATE_LIMIT_ID, limit=50, time_interval=60)]
 
 class CoinbaseRateSource(RateSourceBase):
     def __init__(self):
-        super().__init__()
-        async_throttler = AsyncThrottler(rate_limits=RATE_LIMITS)
+        async_throttler = AsyncThrottler(rate_limits=RATE_LIMITS, limits_share_percentage=Decimal("100.0"))
         self._api_factory = WebAssistantsFactory(throttler=async_throttler)
+        super().__init__()
 
     @property
     def name(self) -> str:
