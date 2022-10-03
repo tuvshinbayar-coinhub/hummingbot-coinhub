@@ -72,6 +72,10 @@ class RateOracle(NetworkBase):
                                 exc_info=True)
 
     @property
+    def ready(self) -> bool:
+        return self._ready_event.is_set()
+
+    @property
     def name(self) -> str:
         return "rate_oracle"
 
