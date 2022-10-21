@@ -28,11 +28,11 @@ class RateMaker(ScriptStrategyBase):
     Before running this example, make sure you run `config rate_oracle_source coingecko`
     """
 
-    maker_source_name: str = "coinhub"
-    maker_trading_pair: str = "SHIB-MNT"
+    maker_source_name: str = "coinhub_sandbox"
+    maker_trading_pair: str = "BNB-MNT"
     maker_base_asset, maker_quote_asset = split_hb_trading_pair(maker_trading_pair)
     taker_source_name: str = "binance_paper_trade"
-    taker_trading_pair: str = "SHIB-USDT"
+    taker_trading_pair: str = "BNB-USDT"
     taker_base_asset, taker_quote_asset = split_hb_trading_pair(taker_trading_pair)
 
     conversion_pair: str = f"{taker_quote_asset}-{maker_quote_asset}"
@@ -50,7 +50,7 @@ class RateMaker(ScriptStrategyBase):
 
     previous_last_trade_price = 0
 
-    should_use_mid_price = False
+    should_use_mid_price = True
 
     cancel_last_task = None
     _rate_oracle_ready = False
@@ -106,20 +106,22 @@ class RateMaker(ScriptStrategyBase):
                 maker_trading_rule = self.maker.trading_rules[self.maker_trading_pair]
                 min_order_size = maker_trading_rule.min_order_size + maker_trading_rule.min_base_amount_increment
 
-                quote_conversion_rate = RateOracle.get_instance().rate(self.conversion_pair)
+                quote_conversion_rate = RateOracle.get_instance().get_pair_rate(self.conversion_pair)
+                self.logger().info(f"Pair rate ({self.conversion_pair}): {quote_conversion_rate}")
                 taker_last_price = self.taker.get_price_by_type(self.taker_trading_pair, PriceType.LastTrade)
                 maker_mid_price = self.maker.get_price_by_type(self.maker_trading_pair, PriceType.MidPrice)
+
                 taker_price_in_maker_quote = taker_last_price * quote_conversion_rate
                 taker_price_change_pct = 1 - (self.previous_last_trade_price / taker_last_price)
                 price = maker_mid_price * (1 + taker_price_change_pct)
 
-                self.logger().info(f"Taker previous last trade price: {self.previous_last_trade_price}")
-                self.logger().info(f"Price change percentage: {taker_price_change_pct}")
-                self.logger().info(f"Taker last trade price: {taker_last_price}")
-                self.logger().info(f"Maker mid price: {maker_mid_price}")
+                # self.logger().info(f"Taker previous last trade price: {self.previous_last_trade_price}")
+                # self.logger().info(f"Price change percentage: {taker_price_change_pct}")
+                # self.logger().info(f"Taker last trade price: {taker_last_price}")
+                # self.logger().info(f"Maker mid price: {maker_mid_price}")
 
                 # if price is different from taker price by 1%, we should take taker price as our order price
-                if not self.should_use_mid_price or (abs(price / taker_price_in_maker_quote) * 100 > 1 or self.previous_last_trade_price == 0):
+                if maker_mid_price.is_nan() or not self.should_use_mid_price or (abs(price / taker_price_in_maker_quote) * 100 > 1 or self.previous_last_trade_price == 0):
                     self.logger().info("Should take as taker price")
                     price = taker_price_in_maker_quote
                 self.logger().info(f"Order price: {price}")

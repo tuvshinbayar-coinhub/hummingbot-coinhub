@@ -1,26 +1,10 @@
 from datetime import datetime
-from typing import (
-    Any,
-    Dict,
-    List,
-    Optional,
-)
+from typing import Any, Dict, List, Optional
 
 import numpy
 import pandas as pd
-from sqlalchemy import (
-    BigInteger,
-    Column,
-    ForeignKey,
-    Index,
-    Integer,
-    JSON,
-    Text,
-)
-from sqlalchemy.orm import (
-    relationship,
-    Session
-)
+from sqlalchemy import JSON, VARCHAR, BigInteger, Column, ForeignKey, Index, Integer, Text
+from sqlalchemy.orm import Session, relationship
 
 from hummingbot.core.event.events import PositionAction
 from hummingbot.model import HummingbotBase
@@ -41,19 +25,19 @@ class TradeFill(HummingbotBase):
 
     config_file_path = Column(Text, nullable=False)
     strategy = Column(Text, nullable=False)
-    market = Column(Text, primary_key=True, nullable=False)
-    symbol = Column(Text, nullable=False)
+    market = Column(VARCHAR(255), primary_key=True, nullable=False)
+    symbol = Column(VARCHAR(255), nullable=False)
     base_asset = Column(Text, nullable=False)
     quote_asset = Column(Text, nullable=False)
     timestamp = Column(BigInteger, nullable=False)
-    order_id = Column(Text, ForeignKey("Order.id"), primary_key=True, nullable=False)
+    order_id = Column(VARCHAR(255), ForeignKey("Order.id"), primary_key=True, nullable=False)
     trade_type = Column(Text, nullable=False)
     order_type = Column(Text, nullable=False)
     price = Column(SqliteDecimal(6), nullable=False)
     amount = Column(SqliteDecimal(6), nullable=False)
     leverage = Column(Integer, nullable=False, default=1)
     trade_fee = Column(JSON, nullable=False)
-    exchange_trade_id = Column(Text, primary_key=True, nullable=False)
+    exchange_trade_id = Column(VARCHAR(255), primary_key=True, nullable=False)
     position = Column(Text, nullable=True, default=PositionAction.NIL.value)
     order = relationship("Order", back_populates="trade_fills")
 

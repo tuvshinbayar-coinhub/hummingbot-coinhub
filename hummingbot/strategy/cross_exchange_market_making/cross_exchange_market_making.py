@@ -417,8 +417,12 @@ class CrossExchangeMarketMakingStrategy(StrategyPyBase):
                 self.logger().warning("WARNING: Some markets are not connected or are down at the moment. Market "
                                       "making may be dangerous when markets or networks are unstable.")
                 for market in self.active_markets:
-                    if market.network_status is NetworkStatus.CONNECTED:
+                    if market.network_status is not NetworkStatus.CONNECTED:
                         self.logger().warning(f"WARNING: {market.name} is not connected!")
+                        self.logger().warning(f"Status: {market.status_dict}")
+                        self.logger().warning(f"_main_task is None: {self._main_task is None}")
+                        if self._main_task is not None:
+                            self.logger().warning(f"_main_task.done(): {self._main_task.done()}")
 
         if self._gateway_quotes_task is None or self._gateway_quotes_task.done():
             self._gateway_quotes_task = safe_ensure_future(self.get_gateway_quotes())

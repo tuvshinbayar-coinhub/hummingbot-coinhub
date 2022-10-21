@@ -1,20 +1,10 @@
 #!/usr/bin/env python
-import pandas as pd
-from typing import (
-    List,
-    Optional,
-)
-from sqlalchemy import (
-    Column,
-    Text,
-    Index,
-    BigInteger,
-    Float,
-)
-from sqlalchemy.orm import (
-    Session
-)
 from datetime import datetime
+from typing import List, Optional
+
+import pandas as pd
+from sqlalchemy import VARCHAR, BigInteger, Column, Float, Index, Text
+from sqlalchemy.orm import Session
 
 from . import HummingbotBase
 
@@ -29,7 +19,7 @@ class FundingPayment(HummingbotBase):
 
     timestamp = Column(BigInteger, primary_key=True, nullable=False)
     config_file_path = Column(Text, nullable=False)
-    market = Column(Text, nullable=False)
+    market = Column(VARCHAR(255), nullable=False)
     rate = Column(Float, nullable=False)
     symbol = Column(Text, nullable=False)
     amount = Column(Float, nullable=False)

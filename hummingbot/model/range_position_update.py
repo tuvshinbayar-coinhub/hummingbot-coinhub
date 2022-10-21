@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from sqlalchemy import JSON, BigInteger, Column, Index, Integer, Text
+from sqlalchemy import JSON, VARCHAR, BigInteger, Column, Index, Integer, Text
 
 from . import HummingbotBase
 
@@ -14,7 +14,7 @@ class RangePositionUpdate(HummingbotBase):
                       )
 
     id = Column(Integer, primary_key=True)
-    hb_id = Column(Text, nullable=False)
+    hb_id = Column(VARCHAR(255), nullable=False)
     timestamp = Column(BigInteger, nullable=False)
     tx_hash = Column(Text, nullable=True)
     token_id = Column(Integer, nullable=False)

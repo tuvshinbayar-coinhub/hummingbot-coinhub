@@ -1,16 +1,7 @@
 #!/usr/bin/env python
-from typing import (
-    Dict,
-    Any
-)
-from sqlalchemy import (
-    Column,
-    Text,
-    Integer,
-    BigInteger,
-    ForeignKey,
-    Index
-)
+from typing import Any, Dict
+
+from sqlalchemy import VARCHAR, BigInteger, Column, ForeignKey, Index, Integer, Text
 from sqlalchemy.orm import relationship
 
 from . import HummingbotBase
@@ -23,7 +14,7 @@ class OrderStatus(HummingbotBase):
                       )
 
     id = Column(Integer, primary_key=True, nullable=False)
-    order_id = Column(Text, ForeignKey("Order.id"), nullable=False)
+    order_id = Column(VARCHAR(255), ForeignKey("Order.id"), nullable=False)
     timestamp = Column(BigInteger, nullable=False)
     status = Column(Text, nullable=False)
     order = relationship("Order", back_populates="status")

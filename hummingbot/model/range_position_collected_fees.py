@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from sqlalchemy import Column, Float, Index, Integer, Text
+from sqlalchemy import VARCHAR, Column, Float, Index, Integer, Text
 
 from . import HummingbotBase
 
@@ -13,7 +13,7 @@ class RangePositionCollectedFees(HummingbotBase):
                             "token_id", "config_file_path"),
                       )
     id = Column(Integer, primary_key=True, nullable=False)
-    config_file_path = Column(Text, nullable=False)
+    config_file_path = Column(VARCHAR(255), nullable=False)
     strategy = Column(Text, nullable=False)
     token_id = Column(Integer, nullable=False)
     token_0 = Column(Text, nullable=False)

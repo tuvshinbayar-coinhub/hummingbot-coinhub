@@ -29,10 +29,10 @@ class RateMaker(ScriptStrategyBase):
     """
 
     maker_source_name: str = "coinhub_sandbox"
-    maker_trading_pair: str = "ETH-MNT"
+    maker_trading_pair: str = "BTC-MNT"
     maker_base_asset, maker_quote_asset = split_hb_trading_pair(maker_trading_pair)
     taker_source_name: str = "binance_paper_trade"
-    taker_trading_pair: str = "ETH-USDT"
+    taker_trading_pair: str = "BTC-USDT"
     taker_base_asset, taker_quote_asset = split_hb_trading_pair(taker_trading_pair)
 
     conversion_pair: str = f"{taker_quote_asset}-{maker_quote_asset}"
@@ -51,6 +51,11 @@ class RateMaker(ScriptStrategyBase):
     previous_last_trade_price = 0
 
     should_use_mid_price = False
+
+    cancel_last_task = None
+    _rate_oracle_ready = False
+
+    _rate_oracle_task = None
 
     @property
     def spread(self) -> Decimal:
@@ -77,11 +82,14 @@ class RateMaker(ScriptStrategyBase):
         - Check the account balance and adjust the proposal accordingly (lower order amount if needed)
         - Lastly, execute the proposal on the exchange
         """
-        if not self._all_markets_ready:
+        if not self._all_markets_ready or not self._rate_oracle_ready:
             self._all_markets_ready = all([market.ready for market in [self.maker, self.taker]])
-            if not RateOracle.get_instance().ready:
+            self._rate_oracle_ready = RateOracle.get_instance().ready
+            if not self._rate_oracle_ready:
                 # Rate oracle not ready yet. Don't do anything.
                 self.logger().warning("Rate oracle is not ready. No market making trades are permitted.")
+                if self._rate_oracle_task is None:
+                    self._rate_oracle_task = safe_ensure_future(RateOracle.get_instance().start_network())
                 return
             if not self._all_markets_ready:
                 # Markets not ready yet. Don't do anything.
@@ -90,38 +98,41 @@ class RateMaker(ScriptStrategyBase):
             else:
                 self.logger().info("Markets are ready. Trading started.")
         if self.last_ordered_ts < (self.current_timestamp - self.buy_interval):
-            safe_ensure_future(self.maker.cancel_all(10))
             self.logger().info("##################################")
-            maker_trading_rule = self.maker.trading_rules[self.maker_trading_pair]
-            min_order_size = maker_trading_rule.min_order_size + maker_trading_rule.min_base_amount_increment
+            if len(self.ignore_list) > 0:
+                self.cancel_last_task = safe_ensure_future(self.maker.cancel(self.maker_trading_pair, self.ignore_list[-1]))
+                self.ignore_list.pop()
+            if not self.ignore_list or (len(self.ignore_list) > 0 and self.cancel_last_task is not None and self.cancel_last_task.done()):
+                maker_trading_rule = self.maker.trading_rules[self.maker_trading_pair]
+                min_order_size = maker_trading_rule.min_order_size + maker_trading_rule.min_base_amount_increment
 
-            quote_conversion_rate = RateOracle.get_instance().rate(self.conversion_pair)
-            taker_last_price = self.taker.get_price_by_type(self.taker_trading_pair, PriceType.LastTrade)
-            maker_mid_price = self.maker.get_price_by_type(self.maker_trading_pair, PriceType.MidPrice)
-            taker_price_in_maker_quote = taker_last_price * quote_conversion_rate
-            taker_price_change_pct = 1 - (self.previous_last_trade_price / taker_last_price)
-            price = maker_mid_price * (1 + taker_price_change_pct)
+                quote_conversion_rate = RateOracle.get_instance().rate(self.conversion_pair)
+                taker_last_price = self.taker.get_price_by_type(self.taker_trading_pair, PriceType.LastTrade)
+                maker_mid_price = self.maker.get_price_by_type(self.maker_trading_pair, PriceType.MidPrice)
+                taker_price_in_maker_quote = taker_last_price * quote_conversion_rate
+                taker_price_change_pct = 1 - (self.previous_last_trade_price / taker_last_price)
+                price = maker_mid_price * (1 + taker_price_change_pct)
 
-            self.logger().info(f"Taker previous last trade price: {self.previous_last_trade_price}")
-            self.logger().info(f"Price change percentage: {taker_price_change_pct}")
-            self.logger().info(f"Taker last trade price: {taker_last_price}")
-            self.logger().info(f"Maker mid price: {maker_mid_price}")
+                self.logger().info(f"Taker previous last trade price: {self.previous_last_trade_price}")
+                self.logger().info(f"Price change percentage: {taker_price_change_pct}")
+                self.logger().info(f"Taker last trade price: {taker_last_price}")
+                self.logger().info(f"Maker mid price: {maker_mid_price}")
 
-            # if price is different from taker price by 1%, we should take taker price as our order price
-            if not self.should_use_mid_price or (abs(price / taker_price_in_maker_quote) * 100 > 1 or self.previous_last_trade_price == 0):
-                self.logger().info("Should take as taker price")
-                price = taker_price_in_maker_quote
-            self.logger().info(f"Order price: {price}")
-            if taker_price_change_pct > 0:
-                # BUY
-                self.logger().info("### BUY ###")
-                self.maker.buy(self.maker_trading_pair, min_order_size, OrderType.LIMIT, price)
-            else:
-                # SELL
-                self.logger().info("### SELL ###")
-                self.maker.sell(self.maker_trading_pair, min_order_size, OrderType.LIMIT, price)
+                # if price is different from taker price by 1%, we should take taker price as our order price
+                if not self.should_use_mid_price or (abs(price / taker_price_in_maker_quote) * 100 > 1 or self.previous_last_trade_price == 0):
+                    self.logger().info("Should take as taker price")
+                    price = taker_price_in_maker_quote
+                self.logger().info(f"Order price: {price}")
+                if taker_price_change_pct > 0:
+                    # BUY
+                    self.logger().info("### BUY ###")
+                    self.maker.buy(self.maker_trading_pair, min_order_size, OrderType.LIMIT, price)
+                else:
+                    # SELL
+                    self.logger().info("### SELL ###")
+                    self.maker.sell(self.maker_trading_pair, min_order_size, OrderType.LIMIT, price)
 
-            self.previous_last_trade_price = taker_last_price
+                self.previous_last_trade_price = taker_last_price
             self.last_ordered_ts = self.current_timestamp
 
     def did_create_buy_order(self, event: BuyOrderCreatedEvent):
