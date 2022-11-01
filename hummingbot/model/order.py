@@ -1,11 +1,10 @@
 from typing import Any, Dict
 
 import numpy
-from sqlalchemy import VARCHAR, BigInteger, Column, Index, Integer, Text
+from sqlalchemy import VARCHAR, BigInteger, Column, Index, Integer, Numeric, Text
 from sqlalchemy.orm import relationship
 
 from hummingbot.model import HummingbotBase
-from hummingbot.model.decimal_type_decorator import SqliteDecimal
 
 
 class Order(HummingbotBase):
@@ -20,17 +19,17 @@ class Order(HummingbotBase):
                             "market", "quote_asset", "creation_timestamp"))
 
     id = Column(VARCHAR(255), primary_key=True, nullable=False)
-    config_file_path = Column(Text, nullable=False)
+    config_file_path = Column(VARCHAR(255), nullable=False)
     strategy = Column(Text, nullable=False)
     market = Column(VARCHAR(255), nullable=False)
-    symbol = Column(Text, nullable=False)
-    base_asset = Column(Text, nullable=False)
-    quote_asset = Column(Text, nullable=False)
+    symbol = Column(VARCHAR(255), nullable=False)
+    base_asset = Column(VARCHAR(255), nullable=False)
+    quote_asset = Column(VARCHAR(255), nullable=False)
     creation_timestamp = Column(BigInteger, nullable=False)
     order_type = Column(Text, nullable=False)
-    amount = Column(SqliteDecimal(6), nullable=False)
+    amount = Column(Numeric(48, 18), nullable=False)
     leverage = Column(Integer, nullable=False, default=1)
-    price = Column(SqliteDecimal(6), nullable=False)
+    price = Column(Numeric(48, 18), nullable=False)
     last_status = Column(Text, nullable=False)
     last_update_timestamp = Column(BigInteger, nullable=False)
     exchange_order_id = Column(Text, nullable=True)

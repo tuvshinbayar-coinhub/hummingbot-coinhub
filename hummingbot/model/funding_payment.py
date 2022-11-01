@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import List, Optional
 
 import pandas as pd
-from sqlalchemy import VARCHAR, BigInteger, Column, Float, Index, Text
+from sqlalchemy import VARCHAR, BigInteger, Column, Float, Index
 from sqlalchemy.orm import Session
 
 from . import HummingbotBase
@@ -18,10 +18,10 @@ class FundingPayment(HummingbotBase):
                       )
 
     timestamp = Column(BigInteger, primary_key=True, nullable=False)
-    config_file_path = Column(Text, nullable=False)
+    config_file_path = Column(VARCHAR(255), nullable=False)
     market = Column(VARCHAR(255), nullable=False)
     rate = Column(Float, nullable=False)
-    symbol = Column(Text, nullable=False)
+    symbol = Column(VARCHAR(255), nullable=False)
     amount = Column(Float, nullable=False)
 
     def __repr__(self) -> str:
