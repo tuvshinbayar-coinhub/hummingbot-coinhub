@@ -659,6 +659,17 @@ class KuCoinRateSourceMode(ExchangeRateSourceModeBase):
         title = "kucoin"
 
 
+class GateIoRateSourceMode(ExchangeRateSourceModeBase):
+    name: str = Field(
+        default="gate_io",
+        const=True,
+        client_data=None,
+    )
+
+    class Config:
+        title: str = "gate_io"
+
+
 class CoinbaseRateSourceMode(ExchangeRateSourceModeBase):
     name: str = Field(
         default="coinbase",
@@ -676,6 +687,7 @@ RATE_SOURCE_MODES = {
     CoinGeckoRateSourceMode.Config.title: CoinGeckoRateSourceMode,
     KuCoinRateSourceMode.Config.title: KuCoinRateSourceMode,
     CoinbaseRateSourceMode.Config.title: CoinbaseRateSourceMode,
+    GateIoRateSourceMode.Config.title: GateIoRateSourceMode,
 }
 
 
