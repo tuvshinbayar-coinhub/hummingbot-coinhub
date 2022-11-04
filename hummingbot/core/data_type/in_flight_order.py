@@ -96,6 +96,8 @@ class InFlightOrder:
             creation_timestamp: float,
             price: Optional[Decimal] = None,
             exchange_order_id: Optional[str] = None,
+            base_rate: Optional[Decimal] = Decimal("1.0"),
+            quote_rate: Optional[Decimal] = Decimal("1.0"),
             initial_state: OrderState = OrderState.PENDING_CREATE,
             leverage: int = 1,
             position: PositionAction = PositionAction.NIL,
@@ -124,6 +126,9 @@ class InFlightOrder:
             self.exchange_order_id_update_event.set()
         self.completely_filled_event = asyncio.Event()
 
+        self.base_rate = base_rate
+        self.quote_rate = quote_rate
+
     @property
     def attributes(self) -> Tuple[Any]:
         return copy.deepcopy(
@@ -142,6 +147,8 @@ class InFlightOrder:
                 self.executed_amount_quote,
                 self.creation_timestamp,
                 self.last_update_timestamp,
+                self.base_rate,
+                self.quote_rate
             )
         )
 
@@ -227,7 +234,9 @@ class InFlightOrder:
             initial_state=OrderState(int(data["last_state"])),
             leverage=int(data["leverage"]),
             position=PositionAction(data["position"]),
-            creation_timestamp=data.get("creation_timestamp", -1)
+            creation_timestamp=data.get("creation_timestamp", -1),
+            base_rate=Decimal(data.get("base_rate", "1.0")),
+            quote_rate=Decimal(data.get("quote_rate", "1.0"))
         )
         order.executed_amount_base = Decimal(data["executed_amount_base"])
         order.executed_amount_quote = Decimal(data["executed_amount_quote"])
@@ -258,7 +267,9 @@ class InFlightOrder:
             "leverage": str(self.leverage),
             "position": self.position.value,
             "creation_timestamp": self.creation_timestamp,
-            "order_fills": {key: fill.to_json() for key, fill in self.order_fills.items()}
+            "order_fills": {key: fill.to_json() for key, fill in self.order_fills.items()},
+            "base_rate": str(self.base_rate),
+            "quote_rate": str(self.quote_rate),
         }
 
     def to_limit_order(self) -> LimitOrder:
@@ -362,7 +373,7 @@ class InFlightOrder:
     def build_order_created_message(self) -> str:
         return (
             f"Created {self.order_type.name.upper()} {self.trade_type.name.upper()} order "
-            f"{self.client_order_id} for {self.amount} {self.trading_pair}."
+            f"{self.client_order_id}({self.exchange_order_id}) for {self.amount} {self.trading_pair}."
         )
 
 

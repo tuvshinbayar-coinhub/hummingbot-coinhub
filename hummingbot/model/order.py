@@ -30,6 +30,9 @@ class Order(HummingbotBase):
     amount = Column(Numeric(48, 18), nullable=False)
     leverage = Column(Integer, nullable=False, default=1)
     price = Column(Numeric(48, 18), nullable=False)
+    base_rate = Column(Numeric(48, 18), nullable=False)
+    quote_rate = Column(Numeric(48, 18), nullable=False)
+    trade_type = Column(Text, nullable=False)
     last_status = Column(Text, nullable=False)
     last_update_timestamp = Column(BigInteger, nullable=False)
     exchange_order_id = Column(Text, nullable=True)
@@ -41,10 +44,11 @@ class Order(HummingbotBase):
         return f"Order(id={self.id}, config_file_path='{self.config_file_path}', strategy='{self.strategy}', " \
                f"market='{self.market}', symbol='{self.symbol}', base_asset='{self.base_asset}', " \
                f"quote_asset='{self.quote_asset}', creation_timestamp={self.creation_timestamp}, " \
-               f"order_type='{self.order_type}', amount={self.amount}, leverage={self.leverage}, " \
+               f"order_type='{self.order_type}', trade_type='{self.trade_type}', amount={self.amount}, leverage={self.leverage}, " \
                f"price={self.price}, last_status='{self.last_status}', " \
                f"last_update_timestamp={self.last_update_timestamp}), " \
-               f"exchange_order_id={self.exchange_order_id}, position={self.position}"
+               f"exchange_order_id={self.exchange_order_id}, position={self.position}, " \
+               f"base_rate='{self.base_asset}', quote_rate={self.quote_rate}"
 
     @staticmethod
     def to_bounty_api_json(order: "Order") -> Dict[str, Any]:
@@ -52,10 +56,13 @@ class Order(HummingbotBase):
             "order_id": order.id,
             "price": numpy.format_float_positional(order.price),
             "quantity": numpy.format_float_positional(order.amount),
+            "base_rate": numpy.format_float_positional(order.base_rate),
+            "quote_rate": numpy.format_float_positional(order.quote_rate),
             "symbol": order.symbol,
             "market": order.market,
             "order_timestamp": order.creation_timestamp,
             "order_type": order.order_type,
+            "trade_type": order.trade_type,
             "base_asset": order.base_asset,
             "quote_asset": order.quote_asset,
             "raw_json": {

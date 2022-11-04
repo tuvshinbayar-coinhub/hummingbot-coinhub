@@ -1,6 +1,5 @@
 import asyncio
 import math
-from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
@@ -176,9 +175,7 @@ class CoinhubSandboxExchange(ExchangePyBase):
             **({'price': price_str} if order_type == OrderType.LIMIT or order_type == OrderType.LIMIT_MAKER is not None else {}),
             "side": side
         }
-        self.logger().debug(f"Api Params: {api_params}")
         order_resp = await self._api_post(path_url=CONSTANTS.CREATE_ORDER_PATH_URL, data=api_params, is_auth_required=True)
-        self.logger().debug(f"Api Resp: {order_resp}")
         order_result = order_resp["data"]
         exchange_order_id = str(order_result["id"])
         return (exchange_order_id, self.current_timestamp)
@@ -276,6 +273,7 @@ class CoinhubSandboxExchange(ExchangePyBase):
                 event_type = event_message.get("method")
                 params = event_message.get("params")
                 if event_type == "order.update":
+                    await self._sleep(0.3)
                     # clean = params[0]
                     data = params[1]
                     tracked_order = self._order_tracker.fetch_order(exchange_order_id=str(data["id"]))
@@ -318,7 +316,7 @@ class CoinhubSandboxExchange(ExchangePyBase):
                                 fill_timestamp=int(fill_timestamp) * 1e-3,
                             )
                             self._order_tracker.process_trade_update(trade_update)
-                        elif new_state == OrderState.FILLED and Decimal(data["deal_stock"]) < Decimal(data["amount"]):
+                        elif new_state == OrderState.FILLED and Decimal(data["left"]) > Decimal(0) and Decimal(data["deal_stock"]) < Decimal(data["amount"]):
                             new_state = OrderState.CANCELED
                         order_update = OrderUpdate(
                             trading_pair=tracked_order.trading_pair,
@@ -497,7 +495,7 @@ class CoinhubSandboxExchange(ExchangePyBase):
             fill_base_amount=Decimal(str(order_fill_msg["amount"])),
             fill_quote_amount=Decimal(str(order_fill_msg["amount"])) * Decimal(str(order_fill_msg["price"])),
             fill_price=Decimal(str(order_fill_msg["price"])),
-            fill_timestamp=datetime.fromisoformat(order_fill_msg["time"]).timestamp(),
+            fill_timestamp=order_fill_msg["time"],
         )
         return trade_update
 

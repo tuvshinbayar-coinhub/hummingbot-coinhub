@@ -148,6 +148,8 @@ class OrderFilledEvent(NamedTuple):
     exchange_trade_id: str = ""
     leverage: Optional[int] = 1
     position: Optional[str] = PositionAction.NIL.value
+    base_rate: Optional[Decimal] = Decimal("1.0")
+    quote_rate: Optional[Decimal] = Decimal("1.0")
 
     @classmethod
     def order_filled_events_from_order_book_rows(cls,
@@ -205,6 +207,8 @@ class BuyOrderCreatedEvent:
     exchange_order_id: Optional[str] = None
     leverage: Optional[int] = 1
     position: Optional[str] = PositionAction.NIL.value
+    base_rate: Optional[Decimal] = Decimal("1.0")
+    quote_rate: Optional[Decimal] = Decimal("1.0")
 
 
 @dataclass
@@ -219,6 +223,8 @@ class SellOrderCreatedEvent:
     exchange_order_id: Optional[str] = None
     leverage: Optional[int] = 1
     position: Optional[str] = PositionAction.NIL.value
+    base_rate: Optional[Decimal] = Decimal("1.0")
+    quote_rate: Optional[Decimal] = Decimal("1.0")
 
 
 @dataclass

@@ -501,18 +501,20 @@ cdef class StrategyBase(TimeIterator):
                                  order_type=OrderType.MARKET,
                                  price=s_decimal_nan,
                                  expiration_seconds=NaN,
-                                 position_action=PositionAction.OPEN):
+                                 position_action=PositionAction.OPEN,
+                                 **kwargs):
         return self.c_buy_with_specific_market(market_trading_pair_tuple, amount,
                                                order_type,
                                                price,
                                                expiration_seconds,
-                                               position_action)
+                                               position_action, kwargs=kwargs)
 
     cdef str c_buy_with_specific_market(self, object market_trading_pair_tuple, object amount,
                                         object order_type=OrderType.MARKET,
                                         object price=s_decimal_nan,
                                         double expiration_seconds=NaN,
-                                        position_action=PositionAction.OPEN):
+                                        position_action=PositionAction.OPEN,
+                                        dict kwargs={}):
         if self._sb_delegate_lock:
             raise RuntimeError("Delegates are not allowed to execute orders directly.")
 
@@ -520,10 +522,10 @@ cdef class StrategyBase(TimeIterator):
             raise TypeError("price and amount must be Decimal objects.")
 
         cdef:
-            kwargs = {"expiration_ts": self._current_timestamp + expiration_seconds,
+            default_kwargs = {"expiration_ts": self._current_timestamp + expiration_seconds,
                       "position_action": position_action}
+            merged_kwargs = {**default_kwargs, **kwargs}
             ConnectorBase market = market_trading_pair_tuple.market
-
         if market not in self._sb_markets:
             raise ValueError(f"Market object for buy order is not in the whitelisted markets set.")
 
@@ -532,8 +534,7 @@ cdef class StrategyBase(TimeIterator):
                                         amount=amount,
                                         order_type=order_type,
                                         price=price,
-                                        kwargs=kwargs)
-
+                                        kwargs=merged_kwargs)
         # Start order tracking
         if order_type.is_limit_type():
             self.c_start_tracking_limit_order(market_trading_pair_tuple, order_id, True, price, amount)
@@ -546,18 +547,21 @@ cdef class StrategyBase(TimeIterator):
                                   order_type=OrderType.MARKET,
                                   price=s_decimal_nan,
                                   expiration_seconds=NaN,
-                                  position_action=PositionAction.OPEN):
+                                  position_action=PositionAction.OPEN,
+                                  **kwargs):
         return self.c_sell_with_specific_market(market_trading_pair_tuple, amount,
                                                 order_type,
                                                 price,
                                                 expiration_seconds,
-                                                position_action)
+                                                position_action, kwargs=kwargs)
 
     cdef str c_sell_with_specific_market(self, object market_trading_pair_tuple, object amount,
                                          object order_type=OrderType.MARKET,
                                          object price=s_decimal_nan,
                                          double expiration_seconds=NaN,
-                                         position_action=PositionAction.OPEN):
+                                         position_action=PositionAction.OPEN,
+                                         dict kwargs={},
+                                         ):
         if self._sb_delegate_lock:
             raise RuntimeError("Delegates are not allowed to execute orders directly.")
 
@@ -565,8 +569,9 @@ cdef class StrategyBase(TimeIterator):
             raise TypeError("price and amount must be Decimal objects.")
 
         cdef:
-            kwargs = {"expiration_ts": self._current_timestamp + expiration_seconds,
+            default_kwargs = {"expiration_ts": self._current_timestamp + expiration_seconds,
                       "position_action": position_action}
+            merged_kwargs = {**default_kwargs, **kwargs}
             ConnectorBase market = market_trading_pair_tuple.market
 
         if market not in self._sb_markets:
@@ -574,8 +579,8 @@ cdef class StrategyBase(TimeIterator):
 
         cdef:
             str order_id = market.c_sell(market_trading_pair_tuple.trading_pair, amount,
-                                         order_type=order_type, price=price, kwargs=kwargs)
-
+                                         order_type=order_type, price=price, kwargs=merged_kwargs)
+        
         # Start order tracking
         if order_type.is_limit_type():
             self.c_start_tracking_limit_order(market_trading_pair_tuple, order_id, False, price, amount)

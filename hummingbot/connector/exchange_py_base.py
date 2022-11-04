@@ -16,7 +16,7 @@ from hummingbot.connector.utils import get_new_client_order_id
 from hummingbot.core.api_throttler.async_throttler import AsyncThrottler
 from hummingbot.core.api_throttler.data_types import RateLimit
 from hummingbot.core.data_type.cancellation_result import CancellationResult
-from hummingbot.core.data_type.common import OrderType, TradeType
+from hummingbot.core.data_type.common import OrderType, PriceType, TradeType
 from hummingbot.core.data_type.in_flight_order import InFlightOrder, OrderState, OrderUpdate, TradeUpdate
 from hummingbot.core.data_type.limit_order import LimitOrder
 from hummingbot.core.data_type.order_book import OrderBook
@@ -254,6 +254,8 @@ class ExchangePyBase(ExchangeBase, ABC):
 
         if price == s_decimal_0:
             current_price: Decimal = self.get_price(trading_pair, False)
+            if Decimal.is_nan(current_price):
+                current_price = self.get_price_by_type(trading_pair, PriceType.LastTrade)
             notional_size = current_price * quantized_amount
         else:
             notional_size = price * quantized_amount
@@ -598,7 +600,9 @@ class ExchangePyBase(ExchangeBase, ABC):
                 trade_type=trade_type,
                 amount=amount,
                 price=price,
-                creation_timestamp=self.current_timestamp
+                creation_timestamp=self.current_timestamp,
+                base_rate=kwargs.get("base_rate", Decimal("1.0")),
+                quote_rate=kwargs.get("quote_rate", Decimal("1.0"))
             )
         )
 

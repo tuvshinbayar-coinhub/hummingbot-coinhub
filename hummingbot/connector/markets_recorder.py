@@ -29,6 +29,7 @@ from hummingbot.core.event.events import (
     RangePositionLiquidityRemovedEvent,
     SellOrderCompletedEvent,
     SellOrderCreatedEvent,
+    TradeType,
 )
 from hummingbot.model.funding_payment import FundingPayment
 from hummingbot.model.market_state import MarketState
@@ -198,6 +199,9 @@ class MarketsRecorder:
 
         with self._sql_manager.get_new_session() as session:
             with session.begin():
+                trade_type = TradeType.SELL
+                if isinstance(evt, BuyOrderCreatedEvent):
+                    trade_type = TradeType.BUY
                 order_record: Order = Order(id=evt.order_id,
                                             config_file_path=self._config_file_path,
                                             strategy=self._strategy_name,
@@ -213,7 +217,11 @@ class MarketsRecorder:
                                             position=evt.position if evt.position else PositionAction.NIL.value,
                                             last_status=event_type.name,
                                             last_update_timestamp=timestamp,
-                                            exchange_order_id=evt.exchange_order_id)
+                                            exchange_order_id=evt.exchange_order_id,
+                                            base_rate=Decimal(evt.base_rate),
+                                            quote_rate=Decimal(evt.quote_rate),
+                                            trade_type=trade_type,
+                                            )
                 order_status: OrderStatus = OrderStatus(order=order_record,
                                                         timestamp=timestamp,
                                                         status=event_type.name)
@@ -267,6 +275,8 @@ class MarketsRecorder:
                     trade_fee=evt.trade_fee.to_json(),
                     exchange_trade_id=evt.exchange_trade_id,
                     position=evt.position if evt.position else PositionAction.NIL.value,
+                    base_rate=evt.base_rate,
+                    quote_rate=evt.quote_rate,
                 )
                 session.add(order_status)
                 session.add(trade_fill_record)

@@ -245,6 +245,8 @@ class ClientOrderTracker:
                 exchange_order_id=order.exchange_order_id,
                 leverage=order.leverage,
                 position=order.position.value,
+                base_rate=order.base_rate,
+                quote_rate=order.quote_rate,
             ),
         )
 
@@ -279,6 +281,8 @@ class ClientOrderTracker:
                 exchange_trade_id=trade_id,
                 leverage=int(order.leverage),
                 position=order.position.value,
+                base_rate=order.base_rate,
+                quote_rate=order.quote_rate,
             ),
         )
 
@@ -325,7 +329,7 @@ class ClientOrderTracker:
                              trade_id: str):
         if prev_executed_amount_base < tracked_order.executed_amount_base:
             self.logger().info(
-                f"The {tracked_order.trade_type.name.upper()} order {tracked_order.client_order_id} "
+                f"The {tracked_order.trade_type.name.upper()} order {tracked_order.client_order_id}({tracked_order.exchange_order_id}) "
                 f"amounting to {tracked_order.executed_amount_base}/{tracked_order.amount} "
                 f"{tracked_order.base_asset} has been filled."
             )
@@ -342,16 +346,16 @@ class ClientOrderTracker:
 
         if tracked_order.is_cancelled:
             self._trigger_cancelled_event(tracked_order)
-            self.logger().info(f"Successfully canceled order {tracked_order.client_order_id}.")
+            self.logger().info(f"Successfully canceled order {tracked_order.client_order_id}({tracked_order.exchange_order_id}).")
 
         elif tracked_order.is_filled:
             self._trigger_completed_event(tracked_order)
             self.logger().info(
-                f"{tracked_order.trade_type.name.upper()} order {tracked_order.client_order_id} completely filled."
+                f"{tracked_order.trade_type.name.upper()} order {tracked_order.client_order_id}({tracked_order.exchange_order_id}) completely filled."
             )
 
         elif tracked_order.is_failure:
             self._trigger_failure_event(tracked_order)
-            self.logger().info(f"Order {tracked_order.client_order_id} has failed. Order Update: {order_update}")
+            self.logger().info(f"Order {tracked_order.client_order_id}({tracked_order.exchange_order_id}) has failed. Order Update: {order_update}")
 
         self.stop_tracking_order(tracked_order.client_order_id)

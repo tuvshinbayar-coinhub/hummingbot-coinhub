@@ -937,7 +937,9 @@ class CrossExchangeMarketMakingStrategy(StrategyPyBase):
                     quantized_hedge_amount,
                     order_price,
                     maker_order_id,
-                    maker_exchange_trade_id
+                    maker_exchange_trade_id,
+                    base_rate=base_rate,
+                    quote_rate=quote_rate,
                 )
 
                 if LogOption.MAKER_ORDER_HEDGED in self.logging_options:
@@ -1027,7 +1029,9 @@ class CrossExchangeMarketMakingStrategy(StrategyPyBase):
                     quantized_hedge_amount,
                     order_price,
                     maker_order_id,
-                    maker_exchange_trade_id
+                    maker_exchange_trade_id,
+                    base_rate=base_rate,
+                    quote_rate=quote_rate,
                 )
 
                 if LogOption.MAKER_ORDER_HEDGED in self.logging_options:
@@ -1668,6 +1672,7 @@ class CrossExchangeMarketMakingStrategy(StrategyPyBase):
             if bid_size > s_decimal_zero:
                 bid_price = await self.get_market_making_price(market_pair, True, bid_size)
                 if not Decimal.is_nan(bid_price):
+                    _, _, quote_rate, _, _, base_rate, _, _, gas_rate = self.get_conversion_rates(market_pair)
                     effective_hedging_price = await self.calculate_effective_hedging_price(
                         market_pair,
                         True,
@@ -1684,7 +1689,7 @@ class CrossExchangeMarketMakingStrategy(StrategyPyBase):
                             f"Current hedging price: {effective_hedging_price:.8f} {market_pair.maker.quote_asset} "
                             f"(Rate adjusted: {effective_hedging_price_adjusted:.8f} {market_pair.taker.quote_asset})."
                         )
-                    self.place_order(market_pair, True, True, bid_size, bid_price)
+                    self.place_order(market_pair, True, True, bid_size, bid_price, base_rate=base_rate, quote_rate=quote_rate)
                 else:
                     if LogOption.NULL_ORDER_SIZE in self.logging_options:
                         self.log_with_clock(
@@ -1707,6 +1712,7 @@ class CrossExchangeMarketMakingStrategy(StrategyPyBase):
             if ask_size > s_decimal_zero:
                 ask_price = await self.get_market_making_price(market_pair, False, ask_size)
                 if not Decimal.is_nan(ask_price):
+                    _, _, quote_rate, _, _, base_rate, _, _, gas_rate = self.get_conversion_rates(market_pair)
                     effective_hedging_price = await self.calculate_effective_hedging_price(
                         market_pair,
                         False,
@@ -1723,7 +1729,7 @@ class CrossExchangeMarketMakingStrategy(StrategyPyBase):
                             f"Current hedging price: {effective_hedging_price:.8f} {market_pair.maker.quote_asset} "
                             f"(Rate adjusted: {effective_hedging_price_adjusted:.8f} {market_pair.taker.quote_asset})."
                         )
-                    self.place_order(market_pair, False, True, ask_size, ask_price)
+                    self.place_order(market_pair, False, True, ask_size, ask_price, base_rate=base_rate, quote_rate=quote_rate)
                 else:
                     if LogOption.NULL_ORDER_SIZE in self.logging_options:
                         self.log_with_clock(
@@ -1747,7 +1753,9 @@ class CrossExchangeMarketMakingStrategy(StrategyPyBase):
                     amount: Decimal,
                     price: Decimal,
                     maker_order_id: str = None,
-                    maker_exchange_trade_id: str = None):
+                    maker_exchange_trade_id: str = None,
+                    base_rate = Decimal("1.0"),
+                    quote_rate = Decimal("1.0")):
         expiration_seconds = s_float_nan
         market_info = market_pair.maker if is_maker else market_pair.taker
         # Market orders are not being submitted as taker orders, limit orders are preferred at all times
@@ -1761,7 +1769,7 @@ class CrossExchangeMarketMakingStrategy(StrategyPyBase):
             try:
                 order_id = self.buy_with_specific_market(market_info, amount,
                                                          order_type=order_type, price=price,
-                                                         expiration_seconds=expiration_seconds)
+                                                         expiration_seconds=expiration_seconds, base_rate=base_rate, quote_rate=quote_rate)
             except ValueError as e:
                 self.logger().warning(f"Placing an order on market {str(market_info.market.name)} "
                                       f"failed with the following error: {str(e)}")
@@ -1769,7 +1777,7 @@ class CrossExchangeMarketMakingStrategy(StrategyPyBase):
             try:
                 order_id = self.sell_with_specific_market(market_info, amount,
                                                           order_type=order_type, price=price,
-                                                          expiration_seconds=expiration_seconds)
+                                                          expiration_seconds=expiration_seconds, base_rate=base_rate, quote_rate=quote_rate)
             except ValueError as e:
                 self.logger().warning(f"Placing an order on market {str(market_info.market.name)} "
                                       f"failed with the following error: {str(e)}")

@@ -30,7 +30,7 @@ class CoinhubSandboxConfigMap(BaseConnectorConfigMap):
     coinhub_api_key: SecretStr = Field(
         default=...,
         client_data=ClientFieldData(
-            prompt=lambda cm: "Enter your Coinhub API key",
+            prompt=lambda cm: "Enter your CoinhubSandbox API key",
             is_secure=True,
             is_connect_key=True,
             prompt_on_new=True,
@@ -39,7 +39,7 @@ class CoinhubSandboxConfigMap(BaseConnectorConfigMap):
     coinhub_api_secret: SecretStr = Field(
         default=...,
         client_data=ClientFieldData(
-            prompt=lambda cm: "Enter your Coinhub API secret",
+            prompt=lambda cm: "Enter your CoinhubSandbox API secret",
             is_secure=True,
             is_connect_key=True,
             prompt_on_new=True,

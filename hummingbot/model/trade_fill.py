@@ -39,6 +39,8 @@ class TradeFill(HummingbotBase):
     exchange_trade_id = Column(VARCHAR(255), primary_key=True, nullable=False)
     position = Column(Text, nullable=True, default=PositionAction.NIL.value)
     order = relationship("Order", back_populates="trade_fills")
+    base_rate = Column(Numeric(48, 18), nullable=False)
+    quote_rate = Column(Numeric(48, 18), nullable=False)
 
     def __repr__(self) -> str:
         return f"TradeFill(config_file_path='{self.config_file_path}', strategy='{self.strategy}', " \
@@ -46,7 +48,8 @@ class TradeFill(HummingbotBase):
                f"quote_asset='{self.quote_asset}', timestamp={self.timestamp}, order_id='{self.order_id}', " \
                f"trade_type='{self.trade_type}', order_type='{self.order_type}', price={self.price}, " \
                f"amount={self.amount}, leverage={self.leverage}, trade_fee={self.trade_fee}, " \
-               f"exchange_trade_id={self.exchange_trade_id}, position={self.position})"
+               f"exchange_trade_id={self.exchange_trade_id}, position={self.position}), " \
+               f"base_rate='{self.base_asset}', quote_rate={self.quote_rate}"
 
     @staticmethod
     def get_trades(sql_session: Session,
@@ -99,7 +102,10 @@ class TradeFill(HummingbotBase):
                               "Amount",
                               "Leverage",
                               "Position",
-                              "Age"]
+                              "Age",
+                              "Base_rate",
+                              "Quote_rate"
+                              ]
         data = []
         for trade in trades:
 
@@ -118,6 +124,8 @@ class TradeFill(HummingbotBase):
                 trade.leverage,
                 trade.position,
                 age,
+                trade.base_rate,
+                trade.quote_rate
             ])
         df = pd.DataFrame(data=data, columns=columns)
         df.set_index('Id', inplace=True)
@@ -136,6 +144,8 @@ class TradeFill(HummingbotBase):
             "trade_type": trade_fill.trade_type,
             "base_asset": trade_fill.base_asset,
             "quote_asset": trade_fill.quote_asset,
+            "base_rate": numpy.format_float_positional(trade_fill.base_rate),
+            "quote_rate": numpy.format_float_positional(trade_fill.quote_rate),
             "raw_json": {
                 "trade_fee": trade_fill.trade_fee,
             }
@@ -160,4 +170,6 @@ class TradeFill(HummingbotBase):
             "amount",
             "leverage",
             "trade_fee",
-            "position", ]
+            "position",
+            "base_rate",
+            "quote_rate", ]
