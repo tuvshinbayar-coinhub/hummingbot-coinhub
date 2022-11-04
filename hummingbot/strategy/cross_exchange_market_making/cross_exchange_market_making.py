@@ -1607,6 +1607,9 @@ class CrossExchangeMarketMakingStrategy(StrategyPyBase):
             base_asset_amount = maker_market.get_balance(market_pair.maker.base_asset)
             quote_asset_amount = taker_market.get_balance(market_pair.taker.quote_asset) * quote_rate
 
+            if market_pair.maker.market.name == "coinhub":
+                quote_asset_amount = taker_market.get_balance(market_pair.taker.quote_asset)
+
             if self.is_gateway_market(market_pair.taker):
                 taker_price = await taker_market.get_order_price(taker_trading_pair,
                                                                  True,
@@ -1621,7 +1624,7 @@ class CrossExchangeMarketMakingStrategy(StrategyPyBase):
                 ).result_price
 
             adjusted_taker_price = taker_price * taker_slippage_adjustment_factor
-            order_size_limit = min(base_asset_amount, quote_asset_amount / adjusted_taker_price)
+            order_size_limit = order_size_limit = min(base_asset_amount, quote_asset_amount / adjusted_taker_price)
 
         quantized_size_limit = maker_market.quantize_order_amount(active_order.trading_pair, order_size_limit)
 
