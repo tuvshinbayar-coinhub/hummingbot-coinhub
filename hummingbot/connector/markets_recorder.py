@@ -220,7 +220,7 @@ class MarketsRecorder:
                                             exchange_order_id=evt.exchange_order_id,
                                             base_rate=Decimal(evt.base_rate),
                                             quote_rate=Decimal(evt.quote_rate),
-                                            trade_type=trade_type,
+                                            trade_type=trade_type.name,
                                             )
                 order_status: OrderStatus = OrderStatus(order=order_record,
                                                         timestamp=timestamp,
