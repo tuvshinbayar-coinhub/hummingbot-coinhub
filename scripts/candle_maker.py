@@ -138,6 +138,7 @@ class RateMaker(ScriptStrategyBase):
         price = self.conversion_rate * taker_last_price
         amount = self.maker.quantize_order_amount(self.maker_trading_pair, self.order_size)
         price = self.maker.quantize_order_price(self.maker_trading_pair, price)
+        self.price_open = taker_last_price
 
         return OrderCandidate(
             trading_pair=self.maker_trading_pair,
