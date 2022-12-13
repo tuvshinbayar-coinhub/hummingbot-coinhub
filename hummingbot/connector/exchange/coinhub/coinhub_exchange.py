@@ -313,14 +313,14 @@ class CoinhubExchange(ExchangePyBase):
                                 fill_base_amount=filled_amount,
                                 fill_quote_amount=Decimal(data["deal_money"]) - tracked_order.executed_amount_quote,
                                 fill_price=Decimal(data["price"]),
-                                fill_timestamp=int(fill_timestamp) * 1e-3,
+                                fill_timestamp=fill_timestamp,
                             )
                             self._order_tracker.process_trade_update(trade_update)
                         elif new_state == OrderState.FILLED and Decimal(data["left"]) > Decimal(0) and Decimal(data["deal_stock"]) < Decimal(data["amount"]):
                             new_state = OrderState.CANCELED
                         order_update = OrderUpdate(
                             trading_pair=tracked_order.trading_pair,
-                            update_timestamp=int(fill_timestamp) * 1e-3,
+                            update_timestamp=fill_timestamp,
                             new_state=new_state,
                             client_order_id=tracked_order.client_order_id,
                             exchange_order_id=tracked_order.exchange_order_id,

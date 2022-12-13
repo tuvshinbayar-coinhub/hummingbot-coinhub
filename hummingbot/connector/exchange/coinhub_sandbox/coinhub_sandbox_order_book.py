@@ -67,4 +67,4 @@ class CoinhubSandboxOrderBook(OrderBook):
             "update_id": ts,
             "price": msg["price"],
             "amount": msg["amount"]
-        }, timestamp=ts * 1e-3)
+        }, timestamp=ts)
