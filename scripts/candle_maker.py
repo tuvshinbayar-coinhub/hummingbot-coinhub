@@ -20,15 +20,15 @@ from hummingbot.core.utils.async_utils import safe_ensure_future
 from hummingbot.strategy.script_strategy_base import ScriptStrategyBase
 
 
-class RateMaker(ScriptStrategyBase):
+class CandleMaker(ScriptStrategyBase):
     """
-    THis strategy buys ETH (with BTC) when the ETH-BTC drops 5% below 50 days moving average (of a previous candle)
-    This example demonstrates:
-      - How to call Binance REST API for candle stick data
-      - How to incorporate external pricing source (Coingecko) into the strategy
-      - How to listen to order filled event
-      - How to structure order execution on a more complex strategy
-    Before running this example, make sure you run `config rate_oracle_source coingecko`
+    This strategy creates random trades on a market with random amounts following the price of one or several sources.
+    It is commonly used to create candles on a market with low activity.
+    Before running this example, make sure:
+      - Run `config rate_oracle_source coinbase`
+      - Set Maker market
+      - Set Taker market
+      - Set conversion_rate
     """
 
     maker_source_name: str = "coinhub_sandbox"
@@ -49,7 +49,7 @@ class RateMaker(ScriptStrategyBase):
     create_timestamp = 0
 
     min_order_refresh_time = 5
-    max_order_refresh_time = 15
+    max_order_refresh_time = 20
     subscribed_to_order_book_trade_event: bool = False
 
     ignore_list = []
@@ -106,6 +106,28 @@ class RateMaker(ScriptStrategyBase):
                 self.logger().info("Markets are ready. Trading started.")
         return True
 
+    @property
+    def taker_last_price(self) -> Decimal:
+        return self.taker.get_price_by_type(self.taker_trading_pair, PriceType.LastTrade)
+
+    @property
+    def taker_last_price_converted(self) -> Decimal:
+        return self.taker_last_price * self.conversion_rate
+
+    @property
+    def maker_best_bid(self) -> Decimal:
+        return self.maker.get_price_by_type(self.maker_trading_pair, PriceType.BestBid)
+
+    @property
+    def maker_best_ask(self) -> Decimal:
+        return self.maker.get_price_by_type(self.maker_trading_pair, PriceType.BestAsk)
+
+    @property
+    def trade_type(self) -> TradeType:
+        if self.price_open is None or (self.price_open is not None and self.taker_last_price > self.price_open):
+            return TradeType.BUY
+        return TradeType.SELL
+
     def on_tick(self):
         """
         Runs every tick_size seconds, this is the main operation of the strategy.
@@ -120,25 +142,34 @@ class RateMaker(ScriptStrategyBase):
             self.subscribe_to_order_book_trade_event()
         self.cancel_all_orders()
         if self.create_timestamp <= self.current_timestamp:
-            order_candidate = self.create_order_candidate()
-            # Adjust OrderCandidate
-            order_adjusted = self.maker.budget_checker.adjust_candidate(order_candidate, all_or_none=False)
-            if math.isclose(order_adjusted.amount, Decimal("0"), rel_tol=1E-5):
-                self.logger().info(f"Order adjusted: {order_adjusted.amount}, too low to place an order")
+            if self.should_create_order:
+                order_candidate = self.create_order_candidate()
+                # Adjust OrderCandidate
+                order_adjusted = self.maker.budget_checker.adjust_candidate(order_candidate, all_or_none=False)
+                if math.isclose(order_adjusted.amount, Decimal("0"), rel_tol=1E-5):
+                    self.logger().info(f"Order adjusted: {order_adjusted.amount}, too low to place an order")
+                else:
+                    self.send_order(order_adjusted)
             else:
-                self.send_order(order_adjusted)
+                self.logger().error("The order should not be created.")
             self.create_timestamp = self.order_refresh_time + self.current_timestamp
 
+    @property
+    def should_create_order(self) -> bool:
+        if self.trade_type is TradeType.BUY and not self.maker_best_ask.is_nan() and self.taker_last_price_converted < self.maker_best_ask:
+            return True
+        if self.trade_type is TradeType.SELL and not self.maker_best_bid.is_nan() and self.taker_last_price_converted > self.maker_best_bid:
+            return True
+        return False
+
     def create_order_candidate(self) -> OrderCandidate:
-        taker_last_price = self.taker.get_price_by_type(self.taker_trading_pair, PriceType.LastTrade)
         if self.price_open is None:
-            self.price_open = taker_last_price
-        price_close = taker_last_price
-        order_side = TradeType.BUY if price_close > self.price_open else TradeType.SELL
-        price = self.conversion_rate * taker_last_price
+            self.price_open = self.taker_last_price
+        order_side = self.trade_type
+        price = self.taker_last_price_converted
         amount = self.maker.quantize_order_amount(self.maker_trading_pair, self.order_size)
         price = self.maker.quantize_order_price(self.maker_trading_pair, price)
-        self.price_open = taker_last_price
+        self.price_open = self.taker_last_price
 
         return OrderCandidate(
             trading_pair=self.maker_trading_pair,
