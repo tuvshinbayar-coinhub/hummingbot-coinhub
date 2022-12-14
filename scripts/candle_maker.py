@@ -54,6 +54,14 @@ class CandleMaker(ScriptStrategyBase):
 
     ignore_list = []
 
+    status_report_interval = 900
+
+    @property
+    def should_report_warnings(self) -> bool:
+        current_tick = (self.current_timestamp // self._status_report_interval)
+        last_tick = (self._last_timestamp // self._status_report_interval)
+        return (current_tick > last_tick)
+
     @property
     def spread(self) -> Decimal:
         return Decimal(self._spread) / Decimal("100")
@@ -94,13 +102,15 @@ class CandleMaker(ScriptStrategyBase):
             self.all_markets_ready = all([market.ready for market in [self.maker, self.taker]])
             self.rate_oracle_ready = RateOracle.get_instance().ready
             if not self.rate_oracle_ready:
-                self.logger().warning("Conversion rates are not ready. No market making trades are permitted.")
+                if self.should_report_warnings:
+                    self.logger().warning("Conversion rates are not ready. No market making trades are permitted.")
                 if self.rate_oracle_task is None:
                     self.rate_oracle_task = safe_ensure_future(RateOracle.get_instance().start_network())
                 return False
             if not self.all_markets_ready:
                 # Markets not ready yet. Don't do anything.
-                self.logger().warning("Markets are not ready. No market making trades are permitted.")
+                if self.should_report_warnings:
+                    self.logger().warning("Markets are not ready. No market making trades are permitted.")
                 return False
             else:
                 self.logger().info("Markets are ready. Trading started.")
@@ -147,15 +157,24 @@ class CandleMaker(ScriptStrategyBase):
                 # Adjust OrderCandidate
                 order_adjusted = self.maker.budget_checker.adjust_candidate(order_candidate, all_or_none=False)
                 if math.isclose(order_adjusted.amount, Decimal("0"), rel_tol=1E-5):
-                    self.logger().info(f"Order adjusted: {order_adjusted.amount}, too low to place an order")
+                    if self.should_report_warnings:
+                        self.logger().info(f"Order adjusted: {order_adjusted.amount}, too low to place an order")
                 else:
                     self.send_order(order_adjusted)
-            else:
-                self.logger().error("The order should not be created.")
             self.create_timestamp = self.order_refresh_time + self.current_timestamp
 
     @property
     def should_create_order(self) -> bool:
+        if self.should_report_warnings:
+            self.logger().error("The order should not be created. Because:")
+            if self.maker_best_ask.is_nan():
+                self.logger().error("\tMaker best ask is NaN")
+            if self.maker_best_bid.is_nan():
+                self.logger().error("\tMaker best bid is NaN")
+            if self.trade_type is TradeType.BUY and self.taker_last_price_converted > self.maker_best_ask:
+                self.logger().error(f"\tThe buy price ({self.taker_last_price_converted}) is higher than maker best ask ({self.maker_best_ask})")
+            if self.trade_type is TradeType.SELL and self.taker_last_price_converted < self.maker_best_bid:
+                self.logger().error(f"\tThe sell price ({self.taker_last_price_converted}) is lower than maker best ask ({self.maker_best_bid})")
         if self.trade_type is TradeType.BUY and not self.maker_best_ask.is_nan() and self.taker_last_price_converted < self.maker_best_ask:
             return True
         if self.trade_type is TradeType.SELL and not self.maker_best_bid.is_nan() and self.taker_last_price_converted > self.maker_best_bid:
@@ -229,8 +248,8 @@ class CandleMaker(ScriptStrategyBase):
         """
         Add new trade to list, remove old trade event, if count greater than trade_count_limit.
         """
-        self.logger().info("### Subscription event ###")
-        self.logger().info(event)
+        # self.logger().info("### Subscription event ###")
+        # self.logger().info(event)
         # self.logger().info(f"current_time: {self.current_timestamp}")airdrop
 
         self.create_timestamp = event.timestamp + self.order_refresh_time
