@@ -6,6 +6,7 @@ from hummingbot.connector.connector_base import ConnectorBase
 from hummingbot.connector.exchange_base import ExchangeBase, PriceType
 from hummingbot.connector.utils import split_hb_trading_pair
 from hummingbot.core.data_type.common import TradeType
+from hummingbot.core.data_type.order_book_query_result import ClientOrderBookQueryResult
 from hummingbot.core.data_type.order_candidate import OrderCandidate
 from hummingbot.core.event.event_forwarder import SourceInfoEventForwarder
 from hummingbot.core.event.events import (
@@ -54,12 +55,13 @@ class CandleMaker(ScriptStrategyBase):
 
     ignore_list = []
 
-    status_report_interval = 900
+    status_report_interval = 90
+    _last_timestamp = 0
 
     @property
     def should_report_warnings(self) -> bool:
-        current_tick = (self.current_timestamp // self._status_report_interval)
-        last_tick = (self._last_timestamp // self._status_report_interval)
+        current_tick = (self.current_timestamp // self.status_report_interval)
+        last_tick = (self._last_timestamp // self.status_report_interval)
         return (current_tick > last_tick)
 
     @property
@@ -82,14 +84,28 @@ class CandleMaker(ScriptStrategyBase):
 
     @property
     def order_refresh_time(self) -> int:
-        return randrange(self.min_order_refresh_time, self.max_order_refresh_time)
+        random_refresh_time = randrange(self.min_order_refresh_time, self.max_order_refresh_time)
+        return random_refresh_time
+
+    @property
+    def min_order_size(self) -> Decimal:
+        maker_trading_rule = self.maker.trading_rules[self.maker_trading_pair]
+        min_order_size = maker_trading_rule.min_order_size
+        return min_order_size
+
+    @property
+    def max_order_size(self) -> Decimal:
+        maker_trading_rule = self.maker.trading_rules[self.maker_trading_pair]
+        max_order_size = maker_trading_rule.min_order_size * 10
+        return max_order_size
 
     @property
     def order_size(self) -> Decimal:
-        maker_trading_rule = self.maker.trading_rules[self.maker_trading_pair]
-        min_order_size = maker_trading_rule.min_order_size
-        max_order_size = maker_trading_rule.min_order_size * 10
-        return Decimal(f"{uniform(min_order_size.__float__(), max_order_size.__float__())}")
+        return Decimal(f"{uniform(self.min_order_size.__float__(), self.max_order_size.__float__())}")
+
+    @property
+    def amplifier_amount(self) -> Decimal:
+        return 10
 
     @property
     def conversion_rate(self) -> Decimal:
@@ -138,6 +154,11 @@ class CandleMaker(ScriptStrategyBase):
             return TradeType.BUY
         return TradeType.SELL
 
+    @property
+    def volume(self) -> ClientOrderBookQueryResult:
+        result = self.maker.get_volume_for_price(self.maker_trading_pair, self.trade_type == TradeType.BUY, self.taker_last_price_converted)
+        return Decimal(str(result.result_volume))
+
     def on_tick(self):
         """
         Runs every tick_size seconds, this is the main operation of the strategy.
@@ -145,40 +166,47 @@ class CandleMaker(ScriptStrategyBase):
         - Check the account balance and adjust the proposal accordingly (lower order amount if needed)
         - Lastly, execute the proposal on the exchange
         """
-        if not self.is_ready:
-            return
-        if not self.subscribed_to_order_book_trade_event:
-            # Set pandas resample rule for a timeframe
-            self.subscribe_to_order_book_trade_event()
-        self.cancel_all_orders()
-        if self.create_timestamp <= self.current_timestamp:
-            if self.should_create_order:
-                order_candidate = self.create_order_candidate()
-                # Adjust OrderCandidate
-                order_adjusted = self.maker.budget_checker.adjust_candidate(order_candidate, all_or_none=False)
-                if math.isclose(order_adjusted.amount, Decimal("0"), rel_tol=1E-5):
-                    if self.should_report_warnings:
-                        self.logger().info(f"Order adjusted: {order_adjusted.amount}, too low to place an order")
-                else:
-                    self.send_order(order_adjusted)
-            self.create_timestamp = self.order_refresh_time + self.current_timestamp
+        try:
+            if not self.is_ready:
+                return
+            if not self.subscribed_to_order_book_trade_event:
+                # Set pandas resample rule for a timeframe
+                self.subscribe_to_order_book_trade_event()
+            self.cancel_all_orders()
+            if self.create_timestamp <= self.current_timestamp:
+                if self.should_create_order:
+                    order_candidate = self.create_order_candidate()
+                    # Adjust OrderCandidate
+                    order_adjusted = self.maker.budget_checker.adjust_candidate(order_candidate, all_or_none=False)
+                    if math.isclose(order_adjusted.amount, Decimal("0"), rel_tol=1E-5):
+                        if self.should_report_warnings:
+                            self.logger().info(f"Order adjusted: {order_adjusted.amount}, too low to place an order")
+                    else:
+                        self.send_order(order_adjusted)
+                self.create_timestamp = self.order_refresh_time + self.current_timestamp
+        finally:
+            self._last_timestamp = self.current_timestamp
 
     @property
     def should_create_order(self) -> bool:
+        if self.trade_type is TradeType.BUY:
+            if not self.maker_best_ask.is_nan() and self.taker_last_price_converted < self.maker_best_ask:
+                return True
+        if self.trade_type is TradeType.SELL:
+            if not self.maker_best_bid.is_nan() and self.taker_last_price_converted > self.maker_best_bid:
+                return True
         if self.should_report_warnings:
-            self.logger().error("The order should not be created. Because:")
+            self.logger().error("The order should not be created.")
+            self.logger().error("Because:")
             if self.maker_best_ask.is_nan():
-                self.logger().error("\tMaker best ask is NaN")
+                self.logger().error(" - Maker best ask is NaN")
             if self.maker_best_bid.is_nan():
-                self.logger().error("\tMaker best bid is NaN")
+                self.logger().error(" - Maker best bid is NaN")
             if self.trade_type is TradeType.BUY and self.taker_last_price_converted > self.maker_best_ask:
-                self.logger().error(f"\tThe buy price ({self.taker_last_price_converted}) is higher than maker best ask ({self.maker_best_ask})")
+                self.logger().error(f" - The buy price ({self.taker_last_price_converted}) is higher than maker best ask ({self.maker_best_ask})")
             if self.trade_type is TradeType.SELL and self.taker_last_price_converted < self.maker_best_bid:
-                self.logger().error(f"\tThe sell price ({self.taker_last_price_converted}) is lower than maker best ask ({self.maker_best_bid})")
-        if self.trade_type is TradeType.BUY and not self.maker_best_ask.is_nan() and self.taker_last_price_converted < self.maker_best_ask:
-            return True
-        if self.trade_type is TradeType.SELL and not self.maker_best_bid.is_nan() and self.taker_last_price_converted > self.maker_best_bid:
-            return True
+                self.logger().error(f" - The sell price ({self.taker_last_price_converted}) is lower than maker best ask ({self.maker_best_bid})")
+            self.logger().info(f"Volume required to break: {self.volume}")
         return False
 
     def create_order_candidate(self) -> OrderCandidate:
@@ -186,10 +214,12 @@ class CandleMaker(ScriptStrategyBase):
             self.price_open = self.taker_last_price
         order_side = self.trade_type
         price = self.taker_last_price_converted
-        amount = self.maker.quantize_order_amount(self.maker_trading_pair, self.order_size)
+        amplifier = 1
+        if self.order_size < self.volume <= (self.max_order_size * self.amplifier_amount):
+            amplifier = self.amplifier_amount
+        amount = self.maker.quantize_order_amount(self.maker_trading_pair, (self.order_size * amplifier))
         price = self.maker.quantize_order_price(self.maker_trading_pair, price)
         self.price_open = self.taker_last_price
-
         return OrderCandidate(
             trading_pair=self.maker_trading_pair,
             is_maker = True,
@@ -250,6 +280,4 @@ class CandleMaker(ScriptStrategyBase):
         """
         # self.logger().info("### Subscription event ###")
         # self.logger().info(event)
-        # self.logger().info(f"current_time: {self.current_timestamp}")airdrop
-
         self.create_timestamp = event.timestamp + self.order_refresh_time
