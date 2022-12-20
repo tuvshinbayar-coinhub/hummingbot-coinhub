@@ -1,3 +1,4 @@
+import asyncio
 import math
 from decimal import Decimal
 from random import randrange, uniform
@@ -13,6 +14,7 @@ from hummingbot.core.event.events import (
     BuyOrderCreatedEvent,
     OrderBookEvent,
     OrderBookTradeEvent,
+    OrderFilledEvent,
     OrderType,
     SellOrderCreatedEvent,
 )
@@ -54,9 +56,13 @@ class CandleMaker(ScriptStrategyBase):
     subscribed_to_order_book_trade_event: bool = False
 
     ignore_list = []
+    cancel_ignore_list = []
 
-    status_report_interval = 90
+    status_report_interval = 12
     _last_timestamp = 0
+    order_size = 0
+
+    _cancel_task = None
 
     @property
     def should_report_warnings(self) -> bool:
@@ -98,10 +104,6 @@ class CandleMaker(ScriptStrategyBase):
         maker_trading_rule = self.maker.trading_rules[self.maker_trading_pair]
         max_order_size = maker_trading_rule.min_order_size * 10
         return max_order_size
-
-    @property
-    def order_size(self) -> Decimal:
-        return Decimal(f"{uniform(self.min_order_size.__float__(), self.max_order_size.__float__())}")
 
     @property
     def amplifier_amount(self) -> Decimal:
@@ -159,6 +161,9 @@ class CandleMaker(ScriptStrategyBase):
         result = self.maker.get_volume_for_price(self.maker_trading_pair, self.trade_type == TradeType.BUY, self.taker_last_price_converted)
         return Decimal(str(result.result_volume))
 
+    def random_order_size(self) -> Decimal:
+        return Decimal(f"{uniform(self.min_order_size.__float__(), self.max_order_size.__float__())}")
+
     def on_tick(self):
         """
         Runs every tick_size seconds, this is the main operation of the strategy.
@@ -172,8 +177,10 @@ class CandleMaker(ScriptStrategyBase):
             if not self.subscribed_to_order_book_trade_event:
                 # Set pandas resample rule for a timeframe
                 self.subscribe_to_order_book_trade_event()
-            self.cancel_all_orders()
+            if self._cancel_task is None:
+                self._cancel_task = safe_ensure_future(self.cancel_all_orders())
             if self.create_timestamp <= self.current_timestamp:
+                self.order_size = self.random_order_size()
                 if self.should_create_order:
                     order_candidate = self.create_order_candidate()
                     # Adjust OrderCandidate
@@ -192,8 +199,12 @@ class CandleMaker(ScriptStrategyBase):
         if self.trade_type is TradeType.BUY:
             if not self.maker_best_ask.is_nan() and self.taker_last_price_converted < self.maker_best_ask:
                 return True
+            if not self.maker_best_ask.is_nan() and self.taker_last_price_converted > self.maker_best_ask and self.volume <= (self.max_order_size * self.amplifier_amount):
+                return True
         if self.trade_type is TradeType.SELL:
             if not self.maker_best_bid.is_nan() and self.taker_last_price_converted > self.maker_best_bid:
+                return True
+            if not self.maker_best_bid.is_nan() and self.taker_last_price_converted < self.maker_best_bid and self.volume <= (self.max_order_size * self.amplifier_amount):
                 return True
         if self.should_report_warnings:
             self.logger().error("The order should not be created.")
@@ -202,11 +213,12 @@ class CandleMaker(ScriptStrategyBase):
                 self.logger().error(" - Maker best ask is NaN")
             if self.maker_best_bid.is_nan():
                 self.logger().error(" - Maker best bid is NaN")
+            if self.volume > self.order_size:
+                self.logger().info(f"To make candle, it requires {self.volume} volume")
             if self.trade_type is TradeType.BUY and self.taker_last_price_converted > self.maker_best_ask:
                 self.logger().error(f" - The buy price ({self.taker_last_price_converted}) is higher than maker best ask ({self.maker_best_ask})")
             if self.trade_type is TradeType.SELL and self.taker_last_price_converted < self.maker_best_bid:
                 self.logger().error(f" - The sell price ({self.taker_last_price_converted}) is lower than maker best ask ({self.maker_best_bid})")
-            self.logger().info(f"Volume required to break: {self.volume}")
         return False
 
     def create_order_candidate(self) -> OrderCandidate:
@@ -214,10 +226,10 @@ class CandleMaker(ScriptStrategyBase):
             self.price_open = self.taker_last_price
         order_side = self.trade_type
         price = self.taker_last_price_converted
-        amplifier = 1
+        order_amount = self.order_size
         if self.order_size < self.volume <= (self.max_order_size * self.amplifier_amount):
-            amplifier = self.amplifier_amount
-        amount = self.maker.quantize_order_amount(self.maker_trading_pair, (self.order_size * amplifier))
+            order_amount = self.max_order_size * 10
+        amount = self.maker.quantize_order_amount(self.maker_trading_pair, order_amount)
         price = self.maker.quantize_order_price(self.maker_trading_pair, price)
         self.price_open = self.taker_last_price
         return OrderCandidate(
@@ -228,13 +240,13 @@ class CandleMaker(ScriptStrategyBase):
             amount = amount,
             price = price)
 
-    def send_order(self, order: OrderCandidate):
+    def send_order(self, order: OrderCandidate) -> str:
         """
         Send order to the exchange, indicate that position is filling, and send log message with a trade.
         """
         is_buy = order.order_side == TradeType.BUY
         place_order = self.buy if is_buy else self.sell
-        place_order(
+        return place_order(
             connector_name=self.maker_source_name,
             trading_pair=self.maker_trading_pair,
             amount=order.amount,
@@ -248,7 +260,7 @@ class CandleMaker(ScriptStrategyBase):
         """
         # self.logger().info(logging.INFO, f"The buy order {event.order_id} has been created")
         if event.order_id not in self.ignore_list:
-            client_order_id = self.maker.sell(self.maker_trading_pair, event.amount, OrderType.LIMIT, event.price)
+            client_order_id = self.send_order(OrderCandidate(trading_pair=event.trading_pair, is_maker=True, order_type=OrderType.LIMIT, order_side=TradeType.SELL, amount=event.amount, price=event.price))
             self.ignore_list.append(client_order_id)
 
     def did_create_sell_order(self, event: SellOrderCreatedEvent):
@@ -257,13 +269,21 @@ class CandleMaker(ScriptStrategyBase):
         """
         # self.logger().info(logging.INFO, f"The sell order {event.order_id} has been created")
         if event.order_id not in self.ignore_list:
-            client_order_id = self.maker.buy(self.maker_trading_pair, event.amount, OrderType.LIMIT, event.price)
+            client_order_id = self.send_order(OrderCandidate(trading_pair=event.trading_pair, is_maker=True, order_type=OrderType.LIMIT, order_side=TradeType.BUY, amount=event.amount, price=event.price))
             self.ignore_list.append(client_order_id)
 
-    def cancel_all_orders(self):
+    def did_fill_order(self, event: OrderFilledEvent):
+        self.cancel_ignore_list.append(event.order_id)
+
+    async def cancel_all_orders(self):
+        await asyncio.sleep(3)
         orders = self.get_active_orders(connector_name=self.maker_source_name)
+        if self.should_report_warnings:
+            self.logger().info(f"CANCEL ACTIVE ORDERS ({len(orders)})")
         for order in orders:
-            self.cancel(self.maker_source_name, order.trading_pair, order.client_order_id)
+            if order.client_order_id not in self.cancel_ignore_list:
+                self.cancel(self.maker_source_name, order.trading_pair, order.client_order_id)
+        self._cancel_task = None
 
     def subscribe_to_order_book_trade_event(self):
         """
@@ -278,6 +298,4 @@ class CandleMaker(ScriptStrategyBase):
         """
         Add new trade to list, remove old trade event, if count greater than trade_count_limit.
         """
-        # self.logger().info("### Subscription event ###")
-        # self.logger().info(event)
         self.create_timestamp = event.timestamp + self.order_refresh_time
