@@ -34,11 +34,11 @@ class CandleMaker(ScriptStrategyBase):
       - Set conversion_rate
     """
 
-    maker_source_name: str = "coinhub_sandbox"
-    maker_trading_pair: str = "ETH-MNT"
+    maker_source_name: str = "coinhub"
+    maker_trading_pair: str = "BTC-MNT"
     maker_base_asset, maker_quote_asset = split_hb_trading_pair(maker_trading_pair)
     taker_source_name: str = "binance_paper_trade"
-    taker_trading_pair: str = "ETH-USDT"
+    taker_trading_pair: str = "BTC-USDT"
     taker_base_asset, taker_quote_asset = split_hb_trading_pair(taker_trading_pair)
 
     conversion_pair: str = f"{taker_quote_asset}-{maker_quote_asset}"
@@ -63,12 +63,7 @@ class CandleMaker(ScriptStrategyBase):
     order_size = 0
 
     _cancel_task = None
-
-    @property
-    def should_report_warnings(self) -> bool:
-        current_tick = (self.current_timestamp // self.status_report_interval)
-        last_tick = (self._last_timestamp // self.status_report_interval)
-        return (current_tick > last_tick)
+    should_report_warnings = 0
 
     @property
     def spread(self) -> Decimal:
@@ -171,6 +166,10 @@ class CandleMaker(ScriptStrategyBase):
         - Check the account balance and adjust the proposal accordingly (lower order amount if needed)
         - Lastly, execute the proposal on the exchange
         """
+        current_tick = (self.current_timestamp // self.status_report_interval)
+        last_tick = (self._last_timestamp // self.status_report_interval)
+        self.should_report_warnings = (current_tick > last_tick)
+
         try:
             if not self.is_ready:
                 return
@@ -196,15 +195,12 @@ class CandleMaker(ScriptStrategyBase):
 
     @property
     def should_create_order(self) -> bool:
-        if self.trade_type is TradeType.BUY:
-            if not self.maker_best_ask.is_nan() and self.taker_last_price_converted < self.maker_best_ask:
+        if not self.maker_best_ask.is_nan() and not self.maker_best_bid.is_nan():
+            if self.maker_best_bid < self.taker_last_price_converted < self.maker_best_ask:
                 return True
-            if not self.maker_best_ask.is_nan() and self.taker_last_price_converted > self.maker_best_ask and self.volume <= (self.max_order_size * self.amplifier_amount):
+            if self.trade_type is TradeType.BUY and self.taker_last_price_converted > self.maker_best_ask and self.volume <= (self.max_order_size * self.amplifier_amount):
                 return True
-        if self.trade_type is TradeType.SELL:
-            if not self.maker_best_bid.is_nan() and self.taker_last_price_converted > self.maker_best_bid:
-                return True
-            if not self.maker_best_bid.is_nan() and self.taker_last_price_converted < self.maker_best_bid and self.volume <= (self.max_order_size * self.amplifier_amount):
+            if self.trade_type is TradeType.SELL and self.taker_last_price_converted < self.maker_best_bid and self.volume <= (self.max_order_size * self.amplifier_amount):
                 return True
         if self.should_report_warnings:
             self.logger().error("The order should not be created.")
@@ -214,11 +210,12 @@ class CandleMaker(ScriptStrategyBase):
             if self.maker_best_bid.is_nan():
                 self.logger().error(" - Maker best bid is NaN")
             if self.volume > self.order_size:
-                self.logger().info(f"To make candle, it requires {self.volume} volume")
-            if self.trade_type is TradeType.BUY and self.taker_last_price_converted > self.maker_best_ask:
-                self.logger().error(f" - The buy price ({self.taker_last_price_converted}) is higher than maker best ask ({self.maker_best_ask})")
-            if self.trade_type is TradeType.SELL and self.taker_last_price_converted < self.maker_best_bid:
-                self.logger().error(f" - The sell price ({self.taker_last_price_converted}) is lower than maker best ask ({self.maker_best_bid})")
+                self.logger().error(f"To make candle, it requires {self.volume} volume")
+            if not (self.maker_best_bid < self.taker_last_price_converted < self.maker_best_ask):
+                if not self.maker_best_bid < self.taker_last_price_converted:
+                    self.logger().error(f" - The price ({self.taker_last_price_converted}) is lower than maker best bid ({self.maker_best_bid})")
+                if not self.maker_best_ask > self.taker_last_price_converted:
+                    self.logger().error(f" - The price ({self.taker_last_price_converted}) is higher than maker best ask ({self.maker_best_ask})")
         return False
 
     def create_order_candidate(self) -> OrderCandidate:
@@ -259,7 +256,7 @@ class CandleMaker(ScriptStrategyBase):
         Method called when the connector notifies a buy order has been created
         """
         # self.logger().info(logging.INFO, f"The buy order {event.order_id} has been created")
-        if event.order_id not in self.ignore_list:
+        if event.order_id not in self.ignore_list and event.order_id not in self.cancel_ignore_list:
             client_order_id = self.send_order(OrderCandidate(trading_pair=event.trading_pair, is_maker=True, order_type=OrderType.LIMIT, order_side=TradeType.SELL, amount=event.amount, price=event.price))
             self.ignore_list.append(client_order_id)
 
@@ -268,7 +265,7 @@ class CandleMaker(ScriptStrategyBase):
         Method called when the connector notifies a sell order has been created
         """
         # self.logger().info(logging.INFO, f"The sell order {event.order_id} has been created")
-        if event.order_id not in self.ignore_list:
+        if event.order_id not in self.ignore_list and event.order_id not in self.cancel_ignore_list:
             client_order_id = self.send_order(OrderCandidate(trading_pair=event.trading_pair, is_maker=True, order_type=OrderType.LIMIT, order_side=TradeType.BUY, amount=event.amount, price=event.price))
             self.ignore_list.append(client_order_id)
 
