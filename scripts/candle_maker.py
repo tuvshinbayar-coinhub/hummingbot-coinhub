@@ -58,7 +58,7 @@ class CandleMaker(ScriptStrategyBase):
     ignore_list = []
     cancel_ignore_list = []
 
-    status_report_interval = 12
+    status_report_interval = 900
     _last_timestamp = 0
     order_size = 0
 
@@ -170,28 +170,26 @@ class CandleMaker(ScriptStrategyBase):
         last_tick = (self._last_timestamp // self.status_report_interval)
         self.should_report_warnings = (current_tick > last_tick)
 
-        try:
-            if not self.is_ready:
-                return
-            if not self.subscribed_to_order_book_trade_event:
-                # Set pandas resample rule for a timeframe
-                self.subscribe_to_order_book_trade_event()
-            if self._cancel_task is None:
-                self._cancel_task = safe_ensure_future(self.cancel_all_orders())
-            if self.create_timestamp <= self.current_timestamp:
-                self.order_size = self.random_order_size()
-                if self.should_create_order:
-                    order_candidate = self.create_order_candidate()
-                    # Adjust OrderCandidate
-                    order_adjusted = self.maker.budget_checker.adjust_candidate(order_candidate, all_or_none=False)
-                    if math.isclose(order_adjusted.amount, Decimal("0"), rel_tol=1E-5):
-                        if self.should_report_warnings:
-                            self.logger().info(f"Order adjusted: {order_adjusted.amount}, too low to place an order")
-                    else:
-                        self.send_order(order_adjusted)
-                self.create_timestamp = self.order_refresh_time + self.current_timestamp
-        finally:
-            self._last_timestamp = self.current_timestamp
+        if not self.is_ready:
+            return
+        if not self.subscribed_to_order_book_trade_event:
+            # Set pandas resample rule for a timeframe
+            self.subscribe_to_order_book_trade_event()
+        if self._cancel_task is None:
+            self._cancel_task = safe_ensure_future(self.cancel_all_orders())
+        if self.create_timestamp <= self.current_timestamp:
+            self.order_size = self.random_order_size()
+            if self.should_create_order:
+                order_candidate = self.create_order_candidate()
+                # Adjust OrderCandidate
+                order_adjusted = self.maker.budget_checker.adjust_candidate(order_candidate, all_or_none=False)
+                if math.isclose(order_adjusted.amount, Decimal("0"), rel_tol=1E-5):
+                    if self.should_report_warnings:
+                        self.logger().info(f"Order adjusted: {order_adjusted.amount}, too low to place an order")
+                else:
+                    self.send_order(order_adjusted)
+            self.create_timestamp = self.order_refresh_time + self.current_timestamp
+        self._last_timestamp = self.current_timestamp
 
     @property
     def should_create_order(self) -> bool:
@@ -278,8 +276,7 @@ class CandleMaker(ScriptStrategyBase):
         if self.should_report_warnings:
             self.logger().info(f"CANCEL ACTIVE ORDERS ({len(orders)})")
         for order in orders:
-            if order.client_order_id not in self.cancel_ignore_list:
-                self.cancel(self.maker_source_name, order.trading_pair, order.client_order_id)
+            self.cancel(self.maker_source_name, order.trading_pair, order.client_order_id)
         self._cancel_task = None
 
     def subscribe_to_order_book_trade_event(self):
