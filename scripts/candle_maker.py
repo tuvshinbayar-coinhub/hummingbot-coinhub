@@ -1,7 +1,8 @@
-import asyncio
 import math
 from decimal import Decimal
 from random import randrange, uniform
+
+import pandas as pd
 
 from hummingbot.connector.connector_base import ConnectorBase
 from hummingbot.connector.exchange_base import ExchangeBase, PriceType
@@ -64,6 +65,8 @@ class CandleMaker(ScriptStrategyBase):
 
     _cancel_task = None
     should_report_warnings = 0
+
+    max_order_age = 10
 
     @property
     def spread(self) -> Decimal:
@@ -193,27 +196,28 @@ class CandleMaker(ScriptStrategyBase):
 
     @property
     def should_create_order(self) -> bool:
-        if not self.maker_best_ask.is_nan() and not self.maker_best_bid.is_nan():
-            if self.maker_best_bid < self.taker_last_price_converted < self.maker_best_ask:
-                return True
-            if self.trade_type is TradeType.BUY and self.taker_last_price_converted > self.maker_best_ask and self.volume <= (self.max_order_size * self.amplifier_amount):
-                return True
-            if self.trade_type is TradeType.SELL and self.taker_last_price_converted < self.maker_best_bid and self.volume <= (self.max_order_size * self.amplifier_amount):
-                return True
-        if self.should_report_warnings:
-            self.logger().error("The order should not be created.")
-            self.logger().error("Because:")
-            if self.maker_best_ask.is_nan():
-                self.logger().error(" - Maker best ask is NaN")
-            if self.maker_best_bid.is_nan():
-                self.logger().error(" - Maker best bid is NaN")
-            if self.volume > self.order_size:
-                self.logger().error(f"To make candle, it requires {self.volume} volume")
-            if not (self.maker_best_bid < self.taker_last_price_converted < self.maker_best_ask):
-                if not self.maker_best_bid < self.taker_last_price_converted:
-                    self.logger().error(f" - The price ({self.taker_last_price_converted}) is lower than maker best bid ({self.maker_best_bid})")
-                if not self.maker_best_ask > self.taker_last_price_converted:
-                    self.logger().error(f" - The price ({self.taker_last_price_converted}) is higher than maker best ask ({self.maker_best_ask})")
+        if len(self.get_active_orders(self.maker_source_name)) == 0:
+            if not self.maker_best_ask.is_nan() and not self.maker_best_bid.is_nan():
+                if self.maker_best_bid < self.taker_last_price_converted < self.maker_best_ask:
+                    return True
+                if self.trade_type is TradeType.BUY and self.taker_last_price_converted > self.maker_best_ask and self.volume <= (self.max_order_size * self.amplifier_amount):
+                    return True
+                if self.trade_type is TradeType.SELL and self.taker_last_price_converted < self.maker_best_bid and self.volume <= (self.max_order_size * self.amplifier_amount):
+                    return True
+            if self.should_report_warnings:
+                self.logger().error("The order should not be created.")
+                self.logger().error("Because:")
+                if self.maker_best_ask.is_nan():
+                    self.logger().error(" - Maker best ask is NaN")
+                if self.maker_best_bid.is_nan():
+                    self.logger().error(" - Maker best bid is NaN")
+                if self.volume > self.order_size:
+                    self.logger().error(f"To make candle, it requires {self.volume} volume")
+                if not (self.maker_best_bid < self.taker_last_price_converted < self.maker_best_ask):
+                    if not self.maker_best_bid < self.taker_last_price_converted:
+                        self.logger().error(f" - The price ({self.taker_last_price_converted}) is lower than maker best bid ({self.maker_best_bid})")
+                    if not self.maker_best_ask > self.taker_last_price_converted:
+                        self.logger().error(f" - The price ({self.taker_last_price_converted}) is higher than maker best ask ({self.maker_best_ask})")
         return False
 
     def create_order_candidate(self) -> OrderCandidate:
@@ -271,12 +275,13 @@ class CandleMaker(ScriptStrategyBase):
         self.cancel_ignore_list.append(event.order_id)
 
     async def cancel_all_orders(self):
-        await asyncio.sleep(3)
         orders = self.get_active_orders(connector_name=self.maker_source_name)
         if self.should_report_warnings:
             self.logger().info(f"CANCEL ACTIVE ORDERS ({len(orders)})")
         for order in orders:
-            self.cancel(self.maker_source_name, order.trading_pair, order.client_order_id)
+            cancel_timestamp = order.creation_timestamp / 1000000 + self.max_order_age
+            if cancel_timestamp < self.current_timestamp:
+                self.cancel(self.maker_source_name, order.trading_pair, order.client_order_id)
         self._cancel_task = None
 
     def subscribe_to_order_book_trade_event(self):
@@ -293,3 +298,25 @@ class CandleMaker(ScriptStrategyBase):
         Add new trade to list, remove old trade event, if count greater than trade_count_limit.
         """
         self.create_timestamp = event.timestamp + self.order_refresh_time
+
+    def active_orders_df(self) -> pd.DataFrame:
+        """
+        Returns a custom data frame of all active maker orders for display purposes
+        """
+        columns = ["Exchange", "Market", "Side", "Price", "Amount", "Age"]
+        data = []
+        for order in self.get_active_orders(self.maker_source_name):
+            age_txt = "n/a" if order.age() <= 0. else pd.Timestamp(order.age(), unit='s').strftime('%H:%M:%S')
+            data.append([
+                self.maker_exchange,
+                order.trading_pair,
+                "buy" if order.is_buy else "sell",
+                float(order.price),
+                float(order.quantity),
+                age_txt
+            ])
+        if not data:
+            raise ValueError
+        df = pd.DataFrame(data=data, columns=columns)
+        df.sort_values(by=["Market", "Side"], inplace=True)
+        return df

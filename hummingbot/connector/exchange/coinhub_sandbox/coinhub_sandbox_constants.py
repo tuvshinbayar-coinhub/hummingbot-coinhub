@@ -131,8 +131,8 @@ RATE_LIMITS = [
     ),
     RateLimit(
         limit_id=ORDER_CANCEL_PATH_URL,
-        limit=MAX_REQUEST,
-        time_interval=ONE_MINUTE,
+        limit=300,
+        time_interval=2,
         linked_limits=[
             LinkedLimitWeightPair(REQUEST_WEIGHT, 1),
             LinkedLimitWeightPair(ORDERS, 1),
