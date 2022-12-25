@@ -276,8 +276,6 @@ class CandleMaker(ScriptStrategyBase):
 
     async def cancel_all_orders(self):
         orders = self.get_active_orders(connector_name=self.maker_source_name)
-        if self.should_report_warnings:
-            self.logger().info(f"CANCEL ACTIVE ORDERS ({len(orders)})")
         for order in orders:
             cancel_timestamp = order.creation_timestamp / 1000000 + self.max_order_age
             if cancel_timestamp < self.current_timestamp:
