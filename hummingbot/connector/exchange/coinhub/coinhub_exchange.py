@@ -193,7 +193,7 @@ class CoinhubExchange(ExchangePyBase):
             self.logger().warning(
                 f"Failed to cancel order {order_id} ({cancel_result})")
 
-        self.logger().info(f"Cancel request response: {cancel_result}")
+        # self.logger().info(f"Cancel request response: {cancel_result}")
 
         return (cancel_result["data"] is not None and cancel_result["data"]["status"] == "done") or cancel_result.get("code", False) == 10
 

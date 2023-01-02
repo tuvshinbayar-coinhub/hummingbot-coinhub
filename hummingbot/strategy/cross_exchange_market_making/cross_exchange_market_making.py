@@ -381,7 +381,7 @@ class CrossExchangeMarketMakingStrategy(StrategyPyBase):
         # Perform clock tick with the market pair tracker.
         self._market_pair_tracker.tick(timestamp)
 
-        if not self._all_markets_ready or not self._rate_oracle_ready:
+        if not self._all_markets_ready:
             self._all_markets_ready = all([market.ready for market in self.active_markets])
             if not self._all_markets_ready:
                 # Markets not ready yet. Don't do anything.
@@ -411,13 +411,6 @@ class CrossExchangeMarketMakingStrategy(StrategyPyBase):
             if not all([market.network_status is NetworkStatus.CONNECTED for market in self.active_markets]):
                 self.logger().warning("WARNING: Some markets are not connected or are down at the moment. Market "
                                       "making may be dangerous when markets or networks are unstable.")
-                for market in self.active_markets:
-                    if market.network_status is not NetworkStatus.CONNECTED:
-                        self.logger().warning(f"WARNING: {market.name} is not connected!")
-                        self.logger().warning(f"Status: {market.status_dict}")
-                        self.logger().warning(f"_main_task is None: {self._main_task is None}")
-                        if self._main_task is not None:
-                            self.logger().warning(f"_main_task.done(): {self._main_task.done()}")
 
         if self._gateway_quotes_task is None or self._gateway_quotes_task.done():
             self._gateway_quotes_task = safe_ensure_future(self.get_gateway_quotes())
@@ -1165,7 +1158,7 @@ class CrossExchangeMarketMakingStrategy(StrategyPyBase):
             else:
                 try:
                     taker_price = taker_market.get_price_for_quote_volume(
-                        taker_trading_pair, True, size
+                        taker_trading_pair, True, taker_balance_in_quote
                     ).result_price
                 except ZeroDivisionError:
                     assert size == s_decimal_zero
@@ -1596,10 +1589,12 @@ class CrossExchangeMarketMakingStrategy(StrategyPyBase):
             taker_slippage_adjustment_factor = Decimal("1") + self.slippage_buffer
 
             base_asset_amount = maker_market.get_balance(market_pair.maker.base_asset)
-            quote_asset_amount = taker_market.get_balance(market_pair.taker.quote_asset) * quote_rate
+            # quote_asset_amount = taker_market.get_balance(market_pair.taker.quote_asset) * quote_rate
 
-            if market_pair.maker.market.name == "coinhub":
-                quote_asset_amount = taker_market.get_balance(market_pair.taker.quote_asset)
+            # if market_pair.maker.market.name == "coinhub":
+            #     quote_asset_amount = taker_market.get_balance(market_pair.taker.quote_asset)
+
+            quote_asset_amount = taker_market.get_balance(market_pair.taker.quote_asset)
 
             if self.is_gateway_market(market_pair.taker):
                 taker_price = await taker_market.get_order_price(taker_trading_pair,
@@ -1611,12 +1606,11 @@ class CrossExchangeMarketMakingStrategy(StrategyPyBase):
                     return False
             else:
                 taker_price = taker_market.get_price_for_quote_volume(
-                    taker_trading_pair, True, size
+                    taker_trading_pair, True, quote_asset_amount
                 ).result_price
 
-            taker_price *= self.markettaker_to_maker_base_conversion_rate(market_pair)
-            adjusted_taker_price = taker_price * taker_slippage_adjustment_factor
-            order_size_limit = order_size_limit = min(base_asset_amount, quote_asset_amount / adjusted_taker_price)
+            adjusted_taker_price = (taker_price / base_rate) * taker_slippage_adjustment_factor
+            order_size_limit = min(base_asset_amount, quote_asset_amount / adjusted_taker_price)
 
         quantized_size_limit = maker_market.quantize_order_amount(active_order.trading_pair, order_size_limit)
 

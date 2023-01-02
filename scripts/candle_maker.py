@@ -19,6 +19,7 @@ from hummingbot.core.event.events import (
     OrderType,
     SellOrderCreatedEvent,
 )
+from hummingbot.core.network_iterator import NetworkStatus
 from hummingbot.core.rate_oracle.rate_oracle import RateOracle
 from hummingbot.core.utils.async_utils import safe_ensure_future
 from hummingbot.strategy.script_strategy_base import ScriptStrategyBase
@@ -114,7 +115,7 @@ class CandleMaker(ScriptStrategyBase):
 
     @property
     def is_ready(self) -> bool:
-        if not self.all_markets_ready or not self.rate_oracle_ready:
+        if not self.all_markets_ready or not self.rate_oracle_ready or not all([market.network_status is NetworkStatus.CONNECTED for market in self.active_markets]):
             self.all_markets_ready = all([market.ready for market in [self.maker, self.taker]])
             self.rate_oracle_ready = RateOracle.get_instance().ready
             if not self.rate_oracle_ready:
