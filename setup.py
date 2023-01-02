@@ -85,6 +85,7 @@ def main():
         "pyperclip",
         "python-dateutil",
         "python-telegram-bot",
+        "redblacktree"
         "requests",
         "rsa",
         "ruamel-yaml",

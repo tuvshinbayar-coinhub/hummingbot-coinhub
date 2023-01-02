@@ -68,6 +68,7 @@ dependencies:
     - pyperclip==1.7.0
     - pytest==4.6.11
     - python-telegram-bot==12.4.2
+    - redblacktree==1.0.2
     - requests==2.22.0
     - rsa==4.7
     - ruamel-yaml==0.16.10
