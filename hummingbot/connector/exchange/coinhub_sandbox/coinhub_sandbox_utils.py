@@ -45,6 +45,15 @@ class CoinhubSandboxConfigMap(BaseConnectorConfigMap):
             prompt_on_new=True,
         )
     )
+    coinhub_client_id_prefix: SecretStr = Field(
+        default=...,
+        client_data=ClientFieldData(
+            prompt=lambda cm: "Enter your CoinhubSandbox client id prefix",
+            is_secure=False,
+            is_connect_key=True,
+            prompt_on_new=True,
+        )
+    )
 
     class Config:
         title = "coinhub_sandbox"

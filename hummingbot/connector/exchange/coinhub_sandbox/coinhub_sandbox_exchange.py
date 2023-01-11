@@ -1,5 +1,6 @@
 import asyncio
 import math
+import re
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
@@ -47,11 +48,13 @@ class CoinhubSandboxExchange(ExchangePyBase):
         client_config_map: "ClientConfigAdapter",
         coinhub_api_key: str,
         coinhub_api_secret: str,
+        coinhub_client_id_prefix: str,
         trading_pairs: Optional[List[str]] = None,
         trading_required: bool = True,
     ):
         self.api_key = coinhub_api_key
         self.secret_key = coinhub_api_secret
+        self.coinhub_client_id_prefix = re.sub('[^A-Za-z0-9]+', '', coinhub_client_id_prefix)
         self._trading_required = trading_required
         self._trading_pairs = trading_pairs
         self._last_trades_poll_coinhub_timestamp = 1.0
@@ -87,7 +90,7 @@ class CoinhubSandboxExchange(ExchangePyBase):
 
     @property
     def client_order_id_prefix(self):
-        return CONSTANTS.HBOT_ORDER_ID_PREFIX
+        return self.coinhub_client_id_prefix
 
     @property
     def trading_rules_request_path(self):
@@ -171,11 +174,16 @@ class CoinhubSandboxExchange(ExchangePyBase):
         symbol = await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair)
         api_params = {
             "amount": amount_str,
+            "client_id": order_id,
             "market": symbol,
             **({'price': price_str} if order_type == OrderType.LIMIT or order_type == OrderType.LIMIT_MAKER is not None else {}),
             "side": side
         }
         order_resp = await self._api_post(path_url=CONSTANTS.CREATE_ORDER_PATH_URL, data=api_params, is_auth_required=True)
+        if order_resp["code"] != 200:
+            self.logger().error("Error:")
+            self.logger().error(api_params)
+            self.logger().error(order_resp)
         order_result = order_resp["data"]
         exchange_order_id = str(order_result["id"])
         return (exchange_order_id, self.current_timestamp)
@@ -386,75 +394,76 @@ class CoinhubSandboxExchange(ExchangePyBase):
                     )
                     continue
                 for trade in trades["data"]["records"]:
-                    exchange_order_id = str(trade["id"])
-                    if exchange_order_id in order_by_exchange_id_map:
-                        # This is a fill for a tracked order
-                        tracked_order = order_by_exchange_id_map[exchange_order_id]
-                        fee = TradeFeeBase.new_spot_fee(
-                            fee_schema=self.trade_fee_schema(),
-                            trade_type=tracked_order.trade_type,
-                            percent_token=symbol.split("/")[0] if trade["side"] == 2 else symbol.split("/")[1],
-                            flat_fees=[
-                                TokenAmount(amount=Decimal(trade["deal_fee"]), token=symbol.split("/")[0] if trade["side"] == 2 else symbol.split("/")[1])
-                            ],
-                        )
-                        trade_update = TradeUpdate(
-                            trade_id=str(trade["id"]),
-                            client_order_id=tracked_order.client_order_id,
-                            exchange_order_id=exchange_order_id,
-                            trading_pair=trading_pair,
-                            fee=fee,
-                            fill_base_amount=Decimal(trade["deal_stock"]),
-                            fill_quote_amount=Decimal(trade["deal_money"]),
-                            fill_price=Decimal(trade["price"]),
-                            fill_timestamp=trade["ftime"],
-                        )
-                        self._order_tracker.process_trade_update(trade_update)
-                    elif self.is_confirmed_new_order_filled_event(str(trade["id"]), exchange_order_id, trading_pair):
-                        # This is a fill of an order registered in the DB but not tracked any more
-                        self._current_trade_fills.add(
-                            TradeFillOrderDetails(
-                                market=self.display_name, exchange_trade_id=str(trade["id"]), symbol=trading_pair
+                    if "client_id" in trade and trade["client_id"].startswith(self.client_order_id_prefix):
+                        exchange_order_id = str(trade["id"])
+                        if exchange_order_id in order_by_exchange_id_map:
+                            # This is a fill for a tracked order
+                            tracked_order = order_by_exchange_id_map[exchange_order_id]
+                            fee = TradeFeeBase.new_spot_fee(
+                                fee_schema=self.trade_fee_schema(),
+                                trade_type=tracked_order.trade_type,
+                                percent_token=symbol.split("/")[0] if trade["side"] == 2 else symbol.split("/")[1],
+                                flat_fees=[
+                                    TokenAmount(amount=Decimal(trade["deal_fee"]), token=symbol.split("/")[0] if trade["side"] == 2 else symbol.split("/")[1])
+                                ],
                             )
-                        )
-                        self.trigger_event(
-                            MarketEvent.OrderFilled,
-                            OrderFilledEvent(
-                                timestamp=self.current_timestamp,
-                                order_id=self._exchange_order_ids.get(str(trade["id"]), None),
+                            trade_update = TradeUpdate(
+                                trade_id=str(trade["ftime"]),
+                                client_order_id=tracked_order.client_order_id,
+                                exchange_order_id=exchange_order_id,
                                 trading_pair=trading_pair,
-                                trade_type=TradeType.BUY if trade["side"] == 2 else TradeType.SELL,
-                                order_type=OrderType.LIMIT,
-                                price=Decimal(trade["price"]),
-                                amount=Decimal(trade["deal_stock"]),
-                                trade_fee=DeductedFromReturnsTradeFee(
-                                    flat_fees=[TokenAmount(symbol.split("/")[0] if trade["side"] == 2 else symbol.split("/")[1], Decimal(trade["deal_fee"]))]
+                                fee=fee,
+                                fill_base_amount=Decimal(trade["deal_stock"]),
+                                fill_quote_amount=Decimal(trade["deal_money"]),
+                                fill_price=Decimal(trade["price"]),
+                                fill_timestamp=trade["ftime"],
+                            )
+                            self._order_tracker.process_trade_update(trade_update)
+                        elif self.is_confirmed_new_order_filled_event(str(trade["id"]), exchange_order_id, trading_pair):
+                            # This is a fill of an order registered in the DB but not tracked any more
+                            self._current_trade_fills.add(
+                                TradeFillOrderDetails(
+                                    market=self.display_name, exchange_trade_id=str(trade["id"]), symbol=trading_pair
+                                )
+                            )
+                            self.trigger_event(
+                                MarketEvent.OrderFilled,
+                                OrderFilledEvent(
+                                    timestamp=self.current_timestamp,
+                                    order_id=self._exchange_order_ids.get(str(trade["id"]), None),
+                                    trading_pair=trading_pair,
+                                    trade_type=TradeType.BUY if trade["side"] == 2 else TradeType.SELL,
+                                    order_type=OrderType.LIMIT,
+                                    price=Decimal(trade["price"]),
+                                    amount=Decimal(trade["deal_stock"]),
+                                    trade_fee=DeductedFromReturnsTradeFee(
+                                        flat_fees=[TokenAmount(symbol.split("/")[0] if trade["side"] == 2 else symbol.split("/")[1], Decimal(trade["deal_fee"]))]
+                                    ),
+                                    exchange_trade_id=str(trade["id"]),
                                 ),
-                                exchange_trade_id=str(trade["id"]),
-                            ),
-                        )
-                        self.logger().info(f"Recreating missing trade in TradeFill: {trade}")
+                            )
+                            self.logger().info(f"Recreating missing trade in TradeFill: {trade}")
 
     async def _all_trade_updates_for_order(self, order: InFlightOrder) -> List[TradeUpdate]:
         trade_updates = []
-
         try:
-            exchange_order_id = int(order.exchange_order_id)
-            trading_pair = await self.exchange_symbol_associated_to_pair(trading_pair=order.trading_pair)
-            all_fills_response = await self._api_post(
-                path_url=CONSTANTS.ORDER_FILLS_URL,
-                data={
-                    "market": trading_pair,
-                    "order_id": int(exchange_order_id)
-                },
-                is_auth_required=True,
-                limit_id=CONSTANTS.ORDER_FILLS_URL)
-            if not all_fills_response.get("data", False):
-                self.logger().error("Unexpected error in all trades updates for order", exc_info=True)
-                return []
-            for trade_fill in all_fills_response["data"]["records"]:
-                trade_update = self._create_trade_update_with_order_fill_data(order_fill_msg=trade_fill, order=order)
-                trade_updates.append(trade_update)
+            if order.exchange_order_id:
+                exchange_order_id = int(order.exchange_order_id)
+                trading_pair = await self.exchange_symbol_associated_to_pair(trading_pair=order.trading_pair)
+                all_fills_response = await self._api_post(
+                    path_url=CONSTANTS.ORDER_FILLS_URL,
+                    data={
+                        "market": trading_pair,
+                        "order_id": int(exchange_order_id)
+                    },
+                    is_auth_required=True,
+                    limit_id=CONSTANTS.ORDER_FILLS_URL)
+                if not all_fills_response.get("data", False):
+                    self.logger().error("Unexpected error in all trades updates for order", exc_info=True)
+                    return []
+                for trade_fill in all_fills_response["data"]["records"]:
+                    trade_update = self._create_trade_update_with_order_fill_data(order_fill_msg=trade_fill, order=order)
+                    trade_updates.append(trade_update)
         except asyncio.TimeoutError:
             raise IOError(f"Skipped order update with order fills for {order.client_order_id} "
                           "- waiting for exchange order id.")
@@ -487,7 +496,7 @@ class CoinhubSandboxExchange(ExchangePyBase):
             )]
         )
         trade_update = TradeUpdate(
-            trade_id=str(order_fill_msg["deal_order_id"]),
+            trade_id=str(order_fill_msg["time"]),
             client_order_id=order.client_order_id,
             exchange_order_id=order.exchange_order_id,
             trading_pair=order.trading_pair,

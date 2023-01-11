@@ -2,9 +2,7 @@ from hummingbot.core.api_throttler.data_types import LinkedLimitWeightPair, Rate
 from hummingbot.core.data_type.in_flight_order import OrderState
 
 DEFAULT_DOMAIN = ""
-
-HBOT_ORDER_ID_PREFIX = "x-XEKWYICX"
-MAX_ORDER_ID_LEN = 32
+MAX_ORDER_ID_LEN = 30
 
 # Base URL
 PUBLIC_REST_URL = "https://sandbox-api.coinhub.mn/"
