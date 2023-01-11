@@ -693,6 +693,17 @@ class CoinbaseRateSourceMode(ExchangeRateSourceModeBase):
         title = "coinbase"
 
 
+class CoinhubRateSourceMode(ExchangeRateSourceModeBase):
+    name: str = Field(
+        default="coinhub",
+        const=True,
+        client_data=None,
+    )
+
+    class Config:
+        title = "coinhub"
+
+
 RATE_SOURCE_MODES = {
     AscendExRateSourceMode.Config.title: AscendExRateSourceMode,
     BinanceRateSourceMode.Config.title: BinanceRateSourceMode,
@@ -700,6 +711,7 @@ RATE_SOURCE_MODES = {
     KuCoinRateSourceMode.Config.title: KuCoinRateSourceMode,
     CoinbaseRateSourceMode.Config.title: CoinbaseRateSourceMode,
     GateIoRateSourceMode.Config.title: GateIoRateSourceMode,
+    CoinhubRateSourceMode.Config.title: CoinhubRateSourceMode,
 }
 
 
