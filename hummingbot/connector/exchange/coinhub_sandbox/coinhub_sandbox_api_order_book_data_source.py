@@ -83,22 +83,28 @@ class CoinhubSandboxAPIOrderBookDataSource(OrderBookTrackerDataSource):
             trading_rules = self._connector.trading_rules
             if trading_rules:
                 depth_params = []
-                for index, trading_pair in enumerate(self._trading_pairs):
-                    if trading_pair not in trading_rules:
-                        self.logger().warn(f"Trading rules: {trading_rules}")
-                        raise Exception(f"{trading_pair} trading rule not found")
-                    depth_params.append(symbols[index])
-                    depth_params.append(50)
-                    depth_params.append(str(trading_rules[trading_pair].min_price_increment))
-                if depth_params:
-                    payload = {
-                        "id": 2,
-                        "method": CONSTANTS.DIFF_EVENT_TYPE,
-                        "params": depth_params
-                    }
-                    self.logger().info(payload)
-                    subscribe_orderbook_request: WSJSONRequest = WSJSONRequest(payload=payload)
-                    await ws.send(subscribe_orderbook_request)
+                if len(self._trading_pairs) > 0:
+                    for index, trading_pair in enumerate(self._trading_pairs):
+                        if trading_pair not in trading_rules:
+                            self.logger().warn(f"Trading rules: {trading_rules}")
+                            raise Exception(f"{trading_pair} trading rule not found")
+                        depth_params.append(symbols[index])
+                        depth_params.append(50)
+                        depth_params.append(str(trading_rules[trading_pair].min_price_increment))
+                    if depth_params:
+                        payload = {
+                            "id": 2,
+                            "method": CONSTANTS.DIFF_EVENT_TYPE,
+                            "params": depth_params
+                        }
+                        subscribe_orderbook_request: WSJSONRequest = WSJSONRequest(payload=payload)
+                        await ws.send(subscribe_orderbook_request)
+                else:
+                    self.logger().warning("Trading pairs is empty")
+                    raise Exception("Trading rule is empty")
+            else:
+                self.logger().warning("Trading rule is empty")
+                raise Exception("Trading rule is empty")
 
             self.logger().info("Subscribed to public order book and trade channels...")
         except asyncio.CancelledError:
@@ -136,13 +142,19 @@ class CoinhubSandboxAPIOrderBookDataSource(OrderBookTrackerDataSource):
 
     async def _parse_order_book_diff_message(self, raw_message: Dict[str, Any], message_queue: asyncio.Queue):
         if "result" not in raw_message:
-            # clean = raw_message["params"][0]
+            clean = raw_message["params"][0]
             data = raw_message["params"][1]
             symbol = raw_message["params"][2]
-            trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(symbol=symbol)
-            order_book_message: OrderBookMessage = CoinhubSandboxOrderBook.diff_message_from_exchange(
-                data, time.time(), {"trading_pair": trading_pair})
-            message_queue.put_nowait(order_book_message)
+            if clean:
+                trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(symbol=symbol)
+                order_book_message: OrderBookMessage = CoinhubSandboxOrderBook.snapshot_message_from_exchange(
+                    data, time.time(), {"trading_pair": trading_pair})
+                message_queue.put_nowait(order_book_message)
+            else:
+                trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(symbol=symbol)
+                snapshot_msg: OrderBookMessage = CoinhubSandboxOrderBook.diff_message_from_exchange(
+                    data, time.time(), {"trading_pair": trading_pair})
+                message_queue.put_nowait(snapshot_msg)
 
     def _channel_originating_message(self, event_message: Dict[str, Any]) -> str:
         channel = ""

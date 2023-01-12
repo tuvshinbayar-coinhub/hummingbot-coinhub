@@ -57,24 +57,26 @@ class CoinhubSandboxAPIUserStreamDataSource(UserStreamTrackerDataSource):
         :param websocket_assistant: the websocket assistant used to connect to the exchange
         """
         try:
-            symbols = [await self._connector.exchange_symbol_associated_to_pair(trading_pair=trading_pair)
-                       for trading_pair in self._trading_pairs]
+            if len(self._trading_pairs) > 0:
+                symbols = [await self._connector.exchange_symbol_associated_to_pair(trading_pair=trading_pair) for trading_pair in self._trading_pairs]
+                payload = {
+                    "id": 222222,
+                    "method": "asset.subscribe",
+                    "params": [trading_pair.split("-")[0] for trading_pair in self._trading_pairs],
+                }
+                subscribe_request: WSJSONRequest = WSJSONRequest(payload=payload)
 
-            payload = {
-                "id": 222222,
-                "method": "asset.subscribe",
-                "params": [trading_pair.split("-")[0] for trading_pair in self._trading_pairs],
-            }
-            subscribe_request: WSJSONRequest = WSJSONRequest(payload=payload)
-
-            await websocket_assistant.send(subscribe_request)
-            payload = {
-                "id": 333333,
-                "method": "order.subscribe",
-                "params": [symbol for symbol in symbols],
-            }
-            subscribe_request: WSJSONRequest = WSJSONRequest(payload=payload)
-            await websocket_assistant.send(subscribe_request)
+                await websocket_assistant.send(subscribe_request)
+                payload = {
+                    "id": 333333,
+                    "method": "order.subscribe",
+                    "params": [symbol for symbol in symbols],
+                }
+                subscribe_request: WSJSONRequest = WSJSONRequest(payload=payload)
+                await websocket_assistant.send(subscribe_request)
+            else:
+                self.logger().error("Trading pairs are empty")
+                raise Exception("Trading pairs are empty")
 
             self.logger().info("Subscribed to private account and orders channels...")
         except asyncio.CancelledError:

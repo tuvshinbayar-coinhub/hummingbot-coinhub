@@ -2,6 +2,7 @@ import asyncio
 import math
 from decimal import Decimal
 from random import randrange, uniform
+from typing import Tuple
 
 import pandas as pd
 
@@ -109,8 +110,7 @@ class CandleMaker(ScriptStrategyBase):
 
     @property
     def conversion_rate(self) -> Decimal:
-        # return RateOracle.get_instance().get_pair_rate(self.conversion_pair)
-        return Decimal("3477.0")
+        return RateOracle.get_instance().get_pair_rate(self.conversion_pair)
 
     @property
     def maker_price_min_increment(self) -> Decimal:
@@ -138,15 +138,11 @@ class CandleMaker(ScriptStrategyBase):
 
     @property
     def maker_last_price(self) -> Decimal:
-        return self.maker.get_price_by_type(self.taker_trading_pair, PriceType.LastTrade)
+        return self.maker.get_price_by_type(self.maker_trading_pair, PriceType.LastTrade)
 
     @property
     def taker_last_price(self) -> Decimal:
         return self.taker.get_price_by_type(self.taker_trading_pair, PriceType.LastTrade)
-
-    @property
-    def taker_last_price_converted(self) -> Decimal:
-        return self.taker_last_price * self.conversion_rate
 
     @property
     def maker_best_bid(self) -> Decimal:
@@ -162,9 +158,8 @@ class CandleMaker(ScriptStrategyBase):
             return TradeType.BUY
         return TradeType.SELL
 
-    @property
-    def volume(self) -> ClientOrderBookQueryResult:
-        result = self.maker.get_volume_for_price(self.maker_trading_pair, self.trade_type == TradeType.BUY, self.taker_last_price_converted)
+    def get_volume_for_price(self, price: Decimal) -> ClientOrderBookQueryResult:
+        result = self.maker.get_volume_for_price(self.maker_trading_pair, self.trade_type == TradeType.BUY, price)
         return Decimal(str(result.result_volume))
 
     def random_order_size(self) -> Decimal:
@@ -192,14 +187,14 @@ class CandleMaker(ScriptStrategyBase):
             if self.create_timestamp <= self.current_timestamp:
                 self.order_size = self.random_order_size()
                 if self.should_create_order:
-                    order_candidate = self.create_order_candidate()
+                    order_candidate, quote_rate = self.create_order_candidate()
                     # Adjust OrderCandidate
                     order_adjusted = self.maker.budget_checker.adjust_candidate(order_candidate, all_or_none=False)
                     if math.isclose(order_adjusted.amount, Decimal("0"), rel_tol=1E-5):
                         if self.should_report_warnings:
                             self.logger().info(f"Order adjusted: {order_adjusted.amount}, too low to place an order")
                     else:
-                        self.send_order(order_adjusted)
+                        self.send_order(order_adjusted, quote_rate)
                 self.create_timestamp = self.order_refresh_time + self.current_timestamp
             self._last_timestamp = self.current_timestamp
         except Exception as e:
@@ -224,12 +219,18 @@ class CandleMaker(ScriptStrategyBase):
                 return False
         return False
 
-    def create_order_candidate(self) -> OrderCandidate:
+    def create_order_candidate(self) -> Tuple[OrderCandidate, Decimal]:
         if self.price_open is None:
-            self.price_open = self.taker_last_price
+            self.price_open = self.taker_last_price * self.conversion_rate
         order_side = self.trade_type
-        price = self.taker_last_price_converted
+        quote_rate = self.conversion_rate
+        price = self.taker_last_price * quote_rate
         order_amount = self.order_size
+        print(f"quote_rate: {quote_rate}")
+        print(f"First candidated: {price}")
+        print(f"maker_last_price: {self.maker_last_price}")
+        print(f"maker_best_ask: {self.maker_best_ask}")
+        print(f"maker_best_bid: {self.maker_best_bid}")
         if price >= self.maker_best_ask:
             price = self.maker_best_ask - self.maker_price_min_increment
         if price <= self.maker_best_bid:
@@ -241,27 +242,29 @@ class CandleMaker(ScriptStrategyBase):
                 price = price - self.maker_price_min_increment
         amount = self.maker.quantize_order_amount(self.maker_trading_pair, order_amount)
         price = self.maker.quantize_order_price(self.maker_trading_pair, price)
-        self.price_open = self.taker_last_price
-        return OrderCandidate(
+        print(f"Quantized price: {price}")
+        self.price_open = price
+        return (OrderCandidate(
             trading_pair=self.maker_trading_pair,
             is_maker = True,
             order_type = OrderType.LIMIT,
             order_side = order_side,
             amount = amount,
-            price = price)
+            price = price), quote_rate)
 
-    def send_order(self, order: OrderCandidate) -> str:
+    def send_order(self, order: OrderCandidate, quote_rate: Decimal) -> str:
         """
         Send order to the exchange, indicate that position is filling, and send log message with a trade.
         """
         is_buy = order.order_side == TradeType.BUY
-        place_order = self.buy if is_buy else self.sell
+        place_order = self.buy_with_specific_market if is_buy else self.sell_with_specific_market
+        market_pair = self._market_trading_pair_tuple(self.maker_source_name, self.maker_trading_pair)
         return place_order(
-            connector_name=self.maker_source_name,
-            trading_pair=self.maker_trading_pair,
-            amount=order.amount,
+            market_pair,
+            order.amount,
             order_type=order.order_type,
-            price=order.price
+            price=order.price,
+            quote_rate=quote_rate
         )
 
     def did_create_buy_order(self, event: BuyOrderCreatedEvent):
@@ -270,7 +273,7 @@ class CandleMaker(ScriptStrategyBase):
         """
         # self.logger().info(logging.INFO, f"The buy order {event.order_id} has been created")
         if event.order_id not in self.orderback_list:
-            client_order_id = self.send_order(OrderCandidate(trading_pair=event.trading_pair, is_maker=True, order_type=OrderType.LIMIT, order_side=TradeType.SELL, amount=event.amount, price=event.price))
+            client_order_id = self.send_order(OrderCandidate(trading_pair=event.trading_pair, is_maker=True, order_type=OrderType.LIMIT, order_side=TradeType.SELL, amount=event.amount, price=event.price), event.quote_rate)
             self.orderback_list.append(client_order_id)
         else:
             safe_ensure_future(self.sleeped_cancel(event.trading_pair, event.order_id))
@@ -281,7 +284,7 @@ class CandleMaker(ScriptStrategyBase):
         """
         # self.logger().info(logging.INFO, f"The sell order {event.order_id} has been created")
         if event.order_id not in self.orderback_list:
-            client_order_id = self.send_order(OrderCandidate(trading_pair=event.trading_pair, is_maker=True, order_type=OrderType.LIMIT, order_side=TradeType.BUY, amount=event.amount, price=event.price))
+            client_order_id = self.send_order(OrderCandidate(trading_pair=event.trading_pair, is_maker=True, order_type=OrderType.LIMIT, order_side=TradeType.BUY, amount=event.amount, price=event.price), event.quote_rate)
             self.orderback_list.append(client_order_id)
         else:
             safe_ensure_future(self.sleeped_cancel(event.trading_pair, event.order_id))

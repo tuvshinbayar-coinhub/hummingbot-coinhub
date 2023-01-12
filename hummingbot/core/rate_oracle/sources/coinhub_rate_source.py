@@ -46,8 +46,18 @@ class CoinhubRateSource(RateSourceBase):
                 break
             else:
                 results.update(task_result)
-        if "MNT-USD" in results and "USD-USDT" in results:
-            results["USDT-MNT"] = (1 / results["MNT-USD"]) * results["USD-USDT"]
+        if "MNT-USD" in results:
+            usd_mnt_rate = (1 / results["MNT-USD"])
+            for pair, price in results.copy().items():
+                symbols = pair.split("-")
+                base_symbol = symbols[0]
+                quote_symbol = symbols[1]
+                if base_symbol != "USD":
+                    continue
+                if quote_symbol == "MNT":
+                    continue
+                mnt_pair = f"{quote_symbol}-MNT"
+                results[mnt_pair] = usd_mnt_rate / price
         return results
 
     async def get_coinhub_prices(self) -> Dict[str, Decimal]:
@@ -68,10 +78,9 @@ class CoinhubRateSource(RateSourceBase):
         )
         rates = request_result["data"]
         for rate in rates:
-            if rate["stock"] == "USDT":
-                continue
-            pair = f"{rate['stock'].upper()}-{rate['money'].upper()}"
-            results[pair] = Decimal(f"{rate['price']}")
+            if rate["stock"] == "MNT":
+                pair = f"{rate['stock'].upper()}-{rate['money'].upper()}"
+                results[pair] = Decimal(f"{rate['price']}")
         return results
 
     async def get_coinbase_prices_by_currency(self, currency: str) -> Dict[str, Decimal]:
